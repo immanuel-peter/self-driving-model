@@ -21,9 +21,14 @@ self-driving-model/
 │
 ├── datasets/                    # Dataset storage and organization
 │   ├── waymo/                  # Waymo Open Dataset
-│   │   ├── perception/         # Perception-focused data
-│   │   ├── motion/            # Motion planning data
-│   │   └── e2e/               # End-to-end driving data
+│   │   ├── raw/               # Raw Waymo data
+│   │   │   ├── perception/    # Raw perception-focused data
+│   │   │   ├── motion/        # Raw motion planning data
+│   │   │   └── e2e/           # Raw end-to-end driving data
+│   │   └── preprocessed/      # Preprocessed Waymo data
+│   │       ├── perception/    # Preprocessed perception-focused data
+│   │       ├── motion/        # Preprocessed motion planning data
+│   │       └── e2e/           # Preprocessed end-to-end driving data
 │   ├── nuscenes/              # nuScenes dataset
 │   ├── bdd100k/               # Berkeley DeepDrive dataset
 │   ├── carla_expert/          # CARLA simulation data

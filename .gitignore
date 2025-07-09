@@ -1,0 +1,18 @@
+# Ignore raw datasets
+datasets/bdd100k/raw/
+datasets/waymo/raw/
+datasets/nuscenes/raw/
+datasets/carla_expert/raw/
+datasets/cosmos/raw/
+
+# Optional: ignore zip files if still present
+*.zip
+
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.db
+*.log
