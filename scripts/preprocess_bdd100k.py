@@ -94,8 +94,8 @@ def main():
 
     if args.task == "detection":
         label_root = Path(args.raw_dir) / "labels" / "detection2020"
-        process_detection(label_root / "train.json", image_root / "train", out_root / "train")
-        process_detection(label_root / "val.json", image_root / "val", out_root / "val")
+        process_detection(label_root / "det_train.json", image_root / "train", out_root / "train")
+        process_detection(label_root / "det_val.json", image_root / "val", out_root / "val")
 
     elif args.task in ["drivable", "segmentation"]:
         label_dir = Path(args.raw_dir) / "labels" / args.task

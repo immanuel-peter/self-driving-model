@@ -1,9 +1,5 @@
 # Ignore raw datasets
-datasets/bdd100k/raw/
-datasets/waymo/raw/
-datasets/nuscenes/raw/
-datasets/carla_expert/raw/
-datasets/cosmos/raw/
+datasets/**/raw/
 
 # Optional: ignore zip files if still present
 *.zip
@@ -16,3 +12,9 @@ __pycache__/
 *.pkl
 *.db
 *.log
+
+*.env
+
+# Jupyter Notebook checkpoints and outputs
+notebooks/.ipynb_checkpoints/
+*/.ipynb_checkpoints/
