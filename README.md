@@ -37,7 +37,9 @@ self-driving-model/
 ├── dataloaders/               # Data loading and preprocessing
 │   ├── waymo_loader.py        # Waymo dataset loader
 │   ├── nuscenes_loader.py     # nuScenes dataset loader
-│   ├── bdd_loader.py          # BDD100K dataset loader
+│   ├── bdd_detection_loader.py    # BDD100K detection dataset loader
+│   ├── bdd_drivable_loader.py     # BDD100K drivable area dataset loader
+│   ├── bdd_segmentation_loader.py # BDD100K semantic segmentation dataset loader
 │   ├── carla_loader.py        # CARLA dataset loader
 │   └── cosmos_loader.py       # COSMOS dataset loader
 │
@@ -47,7 +49,9 @@ self-driving-model/
 │   │   ├── waymo_motion.py
 │   │   ├── waymo_e2e.py
 │   │   ├── nuscenes_expert.py
-│   │   ├── bdd_expert.py
+│   │   ├── bdd_detection_expert.py
+│   │   ├── bdd_drivable_expert.py
+│   │   ├── bdd_segmentation_expert.py
 │   │   └── carla_expert.py
 │   ├── gating/                # Gating network components
 │   │   ├── gating_network.py  # Expert selection network

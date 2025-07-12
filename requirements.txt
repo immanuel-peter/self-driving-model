@@ -5,3 +5,4 @@ pandas
 datasets
 huggingface_hub
 Pillow
+torchvision
