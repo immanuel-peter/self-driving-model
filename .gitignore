@@ -1,5 +1,6 @@
 # Ignore raw datasets
 datasets/**/raw/
+datasets/**/preprocessed/
 
 # Optional: ignore zip files if still present
 *.zip
