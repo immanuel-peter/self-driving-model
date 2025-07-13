@@ -1,6 +1,9 @@
 # Ignore raw datasets
-datasets/**/raw/
-datasets/**/preprocessed/
+datasets/bdd100k/raw/
+datasets/bdd100k/preprocessed/
+datasets/nuscenes/mini/
+datasets/nuscenes/raw/
+datasets/nuscenes/preprocessed/
 
 # Optional: ignore zip files if still present
 *.zip

@@ -6,3 +6,7 @@ datasets
 huggingface_hub
 Pillow
 torchvision
+nuscenes-devkit>=1.1.9
+pyquaternion
+shapely>=2.0.0
+matplotlib>=3.6.0

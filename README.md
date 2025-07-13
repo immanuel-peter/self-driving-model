@@ -19,90 +19,114 @@ This project implements a sophisticated self-driving model architecture that lev
 ```
 self-driving-model/
 │
-├── datasets/                    # Dataset storage and organization
-│   ├── waymo/                  # Waymo Open Dataset
-│   │   ├── raw/               # Raw Waymo data
-│   │   │   ├── perception/    # Raw perception-focused data
-│   │   │   ├── motion/        # Raw motion planning data
-│   │   │   └── e2e/           # Raw end-to-end driving data
-│   │   └── preprocessed/      # Preprocessed Waymo data
-│   │       ├── perception/    # Preprocessed perception-focused data
-│   │       ├── motion/        # Preprocessed motion planning data
-│   │       └── e2e/           # Preprocessed end-to-end driving data
-│   ├── nuscenes/              # nuScenes dataset
-│   ├── bdd100k/               # Berkeley DeepDrive dataset
-│   ├── carla_expert/          # CARLA simulation data
-│   └── cosmos/                # COSMOS dataset
+├── datasets/                          # Dataset storage and organization
+│   ├── waymo/                         # Waymo Open Dataset
+│   │   ├── raw/                       # Raw Waymo data
+│   │   │   ├── perception/            # Raw perception-focused data
+│   │   │   ├── motion/                # Raw motion planning data
+│   │   │   └── e2e/                   # Raw end-to-end driving data
+│   │   └── preprocessed/              # Preprocessed Waymo data
+│   │       ├── perception/            # Preprocessed perception-focused data
+│   │       ├── motion/                # Preprocessed motion planning data
+│   │       └── e2e/                   # Preprocessed end-to-end driving data
+│   ├── nuscenes/                      # nuScenes dataset
+│   ├── bdd100k/                                   # Berkeley DeepDrive dataset
+│   │   ├── raw/                                   # Raw BDD100K data
+│   │   │   ├── images/
+│   │   │   │   └── 100k/
+│   │   │   │       ├── train/                     # Raw training images
+│   │   │   │       ├── val/                       # Raw validation images
+│   │   │   │       └── test/                      # Raw test images
+│   │   │   └── labels/
+│   │   │       ├── detection2020/                 # Detection labels (JSON)
+│   │   │       ├── drivable/
+│   │   │       │   ├── train/                     # Drivable area masks (train)
+│   │   │       │   └── val/                       # Drivable area masks (val)
+│   │   │       └── segmentation/
+│   │   │           ├── train/                     # Segmentation masks (train)
+│   │   │           └── val/                       # Segmentation masks (val)
+│   │   └── preprocessed/                          # Preprocessed BDD100K data
+│   │       ├── detection/
+│   │       │   ├── train/                         # Preprocessed detection .pt files (train)
+│   │       │   └── val/                           # Preprocessed detection .pt files (val)
+│   │       ├── drivable/
+│   │       │   ├── train/                         # Preprocessed drivable .pt files (train)
+│   │       │   └── val/                           # Preprocessed drivable .pt files (val)
+│   │       └── segmentation/
+│   │           ├── train/                         # Preprocessed segmentation .pt files (train)
+│   │           └── val/                           # Preprocessed segmentation .pt files (val)
+│   ├── carla_expert/                  # CARLA simulation data
+│   └── cosmos/                        # COSMOS dataset
 │
-├── dataloaders/               # Data loading and preprocessing
-│   ├── waymo_loader.py        # Waymo dataset loader
-│   ├── nuscenes_loader.py     # nuScenes dataset loader
-│   ├── bdd_detection_loader.py    # BDD100K detection dataset loader
-│   ├── bdd_drivable_loader.py     # BDD100K drivable area dataset loader
-│   ├── bdd_segmentation_loader.py # BDD100K semantic segmentation dataset loader
-│   ├── carla_loader.py        # CARLA dataset loader
-│   └── cosmos_loader.py       # COSMOS dataset loader
+├── dataloaders/                       # Data loading and preprocessing
+│   ├── waymo_loader.py                # Waymo dataset loader
+│   ├── nuscenes_loader.py             # nuScenes dataset loader
+│   ├── bdd_detection_loader.py        # BDD100K detection dataset loader
+│   ├── bdd_drivable_loader.py         # BDD100K drivable area dataset loader
+│   ├── bdd_segmentation_loader.py     # BDD100K semantic segmentation dataset loader
+│   ├── carla_loader.py                # CARLA dataset loader
+│   └── cosmos_loader.py               # COSMOS dataset loader
 │
-├── models/                    # Neural network models
-│   ├── experts/               # Specialized expert models
-│   │   ├── waymo_perception.py
-│   │   ├── waymo_motion.py
-│   │   ├── waymo_e2e.py
-│   │   ├── nuscenes_expert.py
-│   │   ├── bdd_detection_expert.py
-│   │   ├── bdd_drivable_expert.py
-│   │   ├── bdd_segmentation_expert.py
-│   │   └── carla_expert.py
-│   ├── gating/                # Gating network components
-│   │   ├── gating_network.py  # Expert selection network
-│   │   └── feature_fusion.py  # Feature fusion mechanisms
-│   └── shared/                # Shared model components
-│       ├── encoders.py        # Feature encoders
-│       └── decoders.py        # Output decoders
+├── models/                            # Neural network models
+│   ├── experts/                       # Specialized expert models
+│   │   ├── waymo_perception.py        # Waymo perception expert
+│   │   ├── waymo_motion.py            # Waymo motion planning expert
+│   │   ├── waymo_e2e.py               # Waymo end-to-end expert
+│   │   ├── nuscenes_expert.py         # nuScenes expert
+│   │   ├── bdd_detection_expert.py    # BDD100K detection expert
+│   │   ├── bdd_drivable_expert.py     # BDD100K drivable area expert
+│   │   ├── bdd_segmentation_expert.py # BDD100K segmentation expert
+│   │   └── carla_expert.py            # CARLA expert
+│   ├── gating/                        # Gating network components
+│   │   ├── gating_network.py          # Expert selection network
+│   │   └── feature_fusion.py          # Feature fusion mechanisms
+│   └── shared/                        # Shared model components
+│       ├── encoders.py                # Feature encoders
+│       └── decoders.py                # Output decoders
 │
-├── training/                  # Training scripts and utilities
-│   ├── train_expert.py        # Expert model training
-│   ├── train_gating.py        # Gating network training
-│   ├── loss_functions.py      # Custom loss functions
-│   └── utils.py               # Training utilities
+├── training/                          # Training scripts and utilities
+│   ├── train_expert.py                # Expert model training
+│   ├── train_gating.py                # Gating network training
+│   ├── loss_functions.py              # Custom loss functions
+│   └── utils.py                       # Training utilities
 │
-├── inference/                 # Inference and deployment
-│   ├── run_inference.py       # Model inference pipeline
-│   └── carla_agent_wrapper.py # CARLA integration wrapper
+├── inference/                         # Inference and deployment
+│   ├── run_inference.py               # Model inference pipeline
+│   └── carla_agent_wrapper.py         # CARLA integration wrapper
 │
-├── eval/                      # Evaluation and metrics
-│   ├── metrics.py             # Performance metrics
-│   ├── evaluation_loop.py     # Evaluation pipeline
-│   └── visualization_tools.py # Result visualization
+├── eval/                              # Evaluation and metrics
+│   ├── metrics.py                     # Performance metrics
+│   ├── evaluation_loop.py             # Evaluation pipeline
+│   └── visualization_tools.py         # Result visualization
 │
-├── scripts/                   # Utility scripts
-│   ├── preprocess_waymo.sh    # Waymo preprocessing
-│   ├── preprocess_nuscenes.sh # nuScenes preprocessing
-│   ├── collect_carla_data.py  # CARLA data collection
-│   └── download_cosmos.sh     # COSMOS download script
+├── scripts/                           # Utility scripts
+│   ├── preprocess_waymo.sh            # Waymo preprocessing
+│   ├── preprocess_nuscenes.sh         # nuScenes preprocessing
+│   ├── collect_carla_data.py          # CARLA data collection
+│   └── download_cosmos.sh             # COSMOS download script
 │
-├── docker/                    # Containerization
-│   ├── Dockerfile             # Docker image definition
-│   ├── docker-compose.yml     # Multi-service setup
-│   └── entrypoint.sh          # Container entry point
+├── docker/                            # Containerization
+│   ├── Dockerfile                     # Docker image definition
+│   ├── docker-compose.yml             # Multi-service setup
+│   └── entrypoint.sh                  # Container entry point
 │
-├── configs/                   # Configuration files
-│   ├── expert_training.yaml   # Expert training config
-│   ├── gating_config.yaml     # Gating network config
-│   └── deployment_config.yaml # Deployment settings
+├── configs/                           # Configuration files
+│   ├── expert_training.yaml           # Expert training config
+│   ├── gating_config.yaml             # Gating network config
+│   └── deployment_config.yaml         # Deployment settings
 │
-├── notebooks/                 # Jupyter notebooks
-│   ├── visualize_datasets.ipynb    # Dataset exploration
-│   └── debug_gating_behavior.ipynb # Gating analysis
+├── notebooks/                         # Jupyter notebooks
+│   ├── visualize_datasets.ipynb       # Dataset exploration
+│   └── debug_gating_behavior.ipynb    # Gating analysis
 │
-├── tests/                     # Unit and integration tests
-│   ├── test_expert_inference.py
-│   ├── test_gating_decision.py
-│   └── test_carla_loop.py
+├── tests/                             # Unit and integration tests
+│   ├── test_expert_inference.py       # Expert inference tests
+│   ├── test_gating_decision.py        # Gating decision tests
+│   └── test_carla_loop.py             # CARLA integration tests
 │
-├── requirements.txt           # Python dependencies
-├── README.md                  # Project info
-└── LICENSE                    # MIT License
+├── requirements.txt                   # Python dependencies
+├── README.md                          # Project info
+└── LICENSE                            # MIT License
 ```
 
 ## 🛠️ Installation
