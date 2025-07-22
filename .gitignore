@@ -4,6 +4,8 @@ datasets/bdd100k/preprocessed/
 datasets/nuscenes/mini/
 datasets/nuscenes/raw/
 datasets/nuscenes/preprocessed/
+datasets/cosmos/raw/
+datasets/waymo/raw
 
 # Optional: ignore zip files if still present
 *.zip
