@@ -6,11 +6,13 @@ datasets/nuscenes/raw/
 datasets/nuscenes/preprocessed/
 datasets/cosmos/raw/
 datasets/waymo/raw
+datasets/carla/raw
 
 # Optional: ignore zip files if still present
 *.zip
 
 .venv/
+.venv_*/
 __pycache__/
 *.pyc
 *.pyo

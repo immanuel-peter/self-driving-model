@@ -2,7 +2,6 @@ import argparse
 import subprocess
 import os
 import random
-import time
 
 E2E_BUCKET = "gs://waymo_open_dataset_end_to_end_camera_v_1_0_0"
 DEFAULT_OUTDIR = "./datasets/waymo/e2e/raw"
