@@ -34,11 +34,11 @@ def get_nuscenes_loader(split='train', batch_size=None, num_workers=None,
         cache_root: root directory where split folders are stored
     """
     if batch_size is None:
-        batch_size = BATCH_SIZE if split == 'train' else 1
+        batch_size = BATCH_SIZE
     if num_workers is None:
-        num_workers = NUM_WORKERS if split == 'train' else 1
+        num_workers = NUM_WORKERS
     if shuffle is None:
-        shuffle = True if split == 'train' else False
+        shuffle = (split == 'train')
     if cache_root is None:
         cache_root = CACHE_ROOT
 

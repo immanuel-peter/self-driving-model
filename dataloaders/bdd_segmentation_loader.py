@@ -43,11 +43,11 @@ def get_bdd_segmentation_loader(split='train', batch_size=None, num_workers=None
     """
     # Set defaults based on split
     if batch_size is None:
-        batch_size = BATCH_SIZE if split == 'train' else 1
+        batch_size = BATCH_SIZE
     if num_workers is None:
-        num_workers = NUM_WORKERS if split == 'train' else 1
+        num_workers = NUM_WORKERS
     if shuffle is None:
-        shuffle = split == 'train'
+        shuffle = (split == 'train')
     
     # Build path
     split_dir = Path(BASE_DIR) / split
