@@ -1,0 +1,22 @@
+{
+  "use_gpu": true,
+  "batch_size": 32,
+  "expert_epochs": 50,
+  "finetune_epochs": 20,
+  "gating_epochs": 30,
+  "learning_rates": {
+    "expert_training": 0.001,
+    "finetuning": 0.0001,
+    "gating": 0.001
+  },
+  "experts": [
+    "bdd_detection",
+    "bdd_segmentation", 
+    "bdd_drivable",
+    "nuscenes"
+  ],
+  "checkpoints_dir": "checkpoints",
+  "results_dir": "results",
+  "tensorboard_dir": "runs",
+  "notes": "Example configuration for AutoMoE pipeline. Adjust batch_size and epochs based on your hardware and data size."
+}
