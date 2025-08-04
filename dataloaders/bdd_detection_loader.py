@@ -9,6 +9,40 @@ BASE_DIR = 'datasets/bdd100k/preprocessed/detection'
 BATCH_SIZE = 32
 NUM_WORKERS = 4
 
+def detection_collate_fn(batch):
+    """
+    Custom collate function for object detection.
+    
+    Pads bboxes and labels to the max length in the batch.
+    
+    Args:
+        batch: A list of samples, where each sample is a dictionary 
+               {'image': a tensor, 'bboxes': a tensor, 'labels': a tensor}.
+               
+    Returns:
+        A single dictionary containing batched tensors.
+    """
+    images = torch.stack([item['image'] for item in batch], dim=0)
+    
+    # Get the max number of boxes in the batch
+    max_boxes = max(item['bboxes'].shape[0] for item in batch)
+    
+    # Pad bboxes and labels
+    padded_bboxes = torch.full((len(batch), max_boxes, 4), -1.0, dtype=torch.float32)
+    padded_labels = torch.full((len(batch), max_boxes), -1, dtype=torch.long)
+    
+    for i, item in enumerate(batch):
+        num_boxes = item['bboxes'].shape[0]
+        if num_boxes > 0:
+            padded_bboxes[i, :num_boxes] = item['bboxes']
+            padded_labels[i, :num_boxes] = item['labels']
+            
+    return {
+        'image': images,
+        'bboxes': padded_bboxes,
+        'labels': padded_labels
+    }
+
 class BDD100KDetectionDataset(Dataset):
     def __init__(self, pt_dir, transform=None):
         self.pt_files = sorted([
@@ -24,7 +58,6 @@ class BDD100KDetectionDataset(Dataset):
         image = read_image(sample["image_path"]).float() / 255.0
         bboxes = sample["bboxes"]
         labels = sample["labels"]
-        meta = sample["meta"]
 
         if self.transform:
             image = self.transform(image)
@@ -33,7 +66,6 @@ class BDD100KDetectionDataset(Dataset):
             "image": image,
             "bboxes": bboxes,
             "labels": labels,
-            "meta": meta
         }
 
 def get_bdd_detection_loader(split='train', batch_size=None, num_workers=None, 
@@ -70,12 +102,5 @@ def get_bdd_detection_loader(split='train', batch_size=None, num_workers=None,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=(split == 'train'),  # Only drop last for training
-        collate_fn=lambda x: x
+        collate_fn=detection_collate_fn
     )
-
-# Convenience functions
-def get_train_loader(batch_size=None, transform=None):
-    return get_bdd_detection_loader('train', batch_size=batch_size, transform=transform)
-
-def get_val_loader(batch_size=None, transform=None):
-    return get_bdd_detection_loader('val', batch_size=batch_size, transform=transform)

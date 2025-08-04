@@ -64,10 +64,3 @@ def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None,
         pin_memory=True,
         drop_last=(split == 'train')  # Only drop last for training
     )
-
-# Convenience functions
-def get_train_loader(batch_size=None, transform=None):
-    return get_bdd_drivable_loader('train', batch_size=batch_size, transform=transform)
-
-def get_val_loader(batch_size=None, transform=None):
-    return get_bdd_drivable_loader('val', batch_size=batch_size, transform=transform)

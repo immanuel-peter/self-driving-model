@@ -96,7 +96,7 @@ class PointNet(nn.Module):
         return x
 
 class NuScenesExpert(nn.Module):
-    def __init__(self, image_backbone=None, lidar_backbone=None, fusion='concat'):
+    def __init__(self, image_backbone=None, lidar_backbone=None, fusion='concat', num_queries=100):
         super().__init__()
 
         # Image encoder (ResNet-18)
@@ -115,44 +115,67 @@ class NuScenesExpert(nn.Module):
         else:
             self.lidar_backbone = lidar_backbone
 
-        # Fusion and final head
+        # Fusion and multi-query detection head
         self.fusion_type = fusion  # 'concat' or 'sum'
         fusion_dim = 512 if fusion == 'concat' else 256
-        self.head = nn.Sequential(
+        self.num_queries = num_queries
+        
+        # --- KEY CHANGE: Learnable query embeddings ---
+        # These queries will specialize in finding different types of objects
+        self.query_embed = nn.Embedding(num_queries, fusion_dim)
+        
+        # Decoder to process each query with scene context
+        self.decoder = nn.Sequential(
             nn.Linear(fusion_dim, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(128, 10)  # example: predict 10 classes or bbox parameters
         )
+        
+        # Detection heads (now operate on each query)
+        self.class_head = nn.Linear(128, 10)  # 10 classes
+        self.bbox_head = nn.Linear(128, 7)    # 7 box params
 
     def forward(self, batch):
-        image = batch['image']  # [B, 3, 256, 256]
-        lidar = batch['lidar']  # List of [N_i, 3]
+        image = batch['image']         # [B, 3, H, W]
+        lidar = batch['lidar']         # [B, P, 3]   ← padded tensor
 
-        # Encode image with ResNet-18
-        img_feat = self.image_backbone(image)  # [B, 512, 1, 1]
+        # 1) Image branch
+        img_feat = self.image_backbone(image)       # [B, 512, 1, 1]
         img_feat = img_feat.view(img_feat.size(0), -1)  # [B, 512]
-        img_feat = self.image_projection(img_feat)  # [B, 256]
+        img_feat = self.image_projection(img_feat)      # [B, 256]
 
-        # Encode LIDAR with PointNet (batch processing)
-        # Stack point clouds and create mask for padding
-        max_points = max(points.shape[0] for points in lidar)
-        lidar_batch = torch.zeros(len(lidar), max_points, 3, device=image.device)
-        
-        for i, points in enumerate(lidar):
-            lidar_batch[i, :points.shape[0]] = points
-        
-        lidar_feat = self.lidar_backbone(lidar_batch)  # [B, 256]
+        # 2) Lidar branch: directly use the padded tensor
+        #    PointNet expects [B, N, 3]
+        lidar_feat = self.lidar_backbone(lidar)    # [B, 256]
 
-        # Fusion
+        # 3) Fuse scene features
         if self.fusion_type == 'concat':
-            fused = torch.cat([img_feat, lidar_feat], dim=-1)  # [B, 512]
-        elif self.fusion_type == 'sum':
-            fused = img_feat + lidar_feat  # [B, 256]
+            fused_feat = torch.cat([img_feat, lidar_feat], dim=-1)  # [B, 512]
         else:
-            raise ValueError(f"Unknown fusion type: {self.fusion_type}")
+            fused_feat = img_feat + lidar_feat                      # [B, 256]
 
-        return self.head(fused)  # [B, 10]
+        # 4) Process multiple queries for multi-object detection
+        B = fused_feat.size(0)
+        
+        # Expand scene features to match number of queries
+        # fused_feat: [B, fusion_dim] -> [B, num_queries, fusion_dim]
+        fused_feat = fused_feat.unsqueeze(1).expand(B, self.num_queries, -1)
+        
+        # Add learnable query embeddings to give each query a unique "personality"
+        # query_embed.weight: [num_queries, fusion_dim] -> [B, num_queries, fusion_dim]
+        queries = self.query_embed.weight.unsqueeze(0).expand(B, -1, -1)
+        
+        # Combine scene context with query embeddings
+        x = self.decoder(fused_feat + queries)  # [B, num_queries, 128]
+        
+        # Generate predictions for each query
+        cls_logits = self.class_head(x)  # [B, num_queries, 10]
+        bbox_preds = self.bbox_head(x)   # [B, num_queries, 7]
+        
+        return {
+            'class_logits': cls_logits,
+            'bbox_preds':   bbox_preds
+        }

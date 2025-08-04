@@ -7,6 +7,96 @@ from pathlib import Path
 CACHE_ROOT = 'datasets/nuscenes/preprocessed'
 BATCH_SIZE = 32
 NUM_WORKERS = 4
+NUSCENES_CLASSES = {
+    "car": 0,
+    "truck": 1,
+    "bus": 2,
+    "trailer": 3,
+    "construction_vehicle": 4,
+    "pedestrian": 5,
+    "motorcycle": 6,
+    "bicycle": 7,
+    "traffic_cone": 8,
+    "barrier": 9,
+}
+
+def nuscenes_collate_fn(batch):
+    """
+    Custom collate function for the NuScenes dataset.
+
+    It handles the variable number of LiDAR points and ground-truth boxes
+    by padding them to the maximum length in the batch.
+
+    Args:
+        batch: A list of sample dictionaries from the NuScenesDataset.
+
+    Returns:
+        A single dictionary containing the batched and padded tensors.
+    """
+    # Fixed-size tensors can be stacked directly
+    images = torch.stack([item['image'] for item in batch], dim=0)
+    intrinsics = torch.stack([item['intrinsics'] for item in batch], dim=0)
+
+    # --- Pad LiDAR point clouds ---
+    max_lidar_points = max(item['lidar'].shape[0] for item in batch)
+    padded_lidars = torch.zeros(
+        (len(batch), max_lidar_points, 3),
+        dtype=torch.float32
+    )
+    for i, item in enumerate(batch):
+        pts = item['lidar']
+        padded_lidars[i, :pts.shape[0], :] = pts
+
+    # --- Convert Box objects to tensor + labels ---
+    def box_list_to_tensor_and_labels(box_list):
+        """
+        Turn a list of NuScenes Box objects into:
+          - boxes:  (N,7) tensor [cx, cy, cz, w, l, h, yaw]
+          - labels: (N,) tensor of class IDs in [0..9]
+        """
+        if not box_list:
+            return torch.zeros((0,7),dtype=torch.float32), torch.zeros((0,),dtype=torch.int64)
+        feats = []
+        labels = []
+        for b in box_list:
+            coords = list(b.center) + list(b.wlh) + [b.orientation.yaw]
+            feats.append(torch.tensor(coords, dtype=torch.float32))
+            # map b.name -> integer class
+            labels.append(NUSCENES_CLASSES[b.name])
+        return torch.stack(feats, dim=0), torch.tensor(labels, dtype=torch.int64)
+
+    for item in batch:
+        boxes_t, labels_t = box_list_to_tensor_and_labels(item['boxes'])
+        item['boxes'] = boxes_t
+        item['labels'] = labels_t
+
+    # --- Pad Ground-Truth Boxes & Labels ---
+    max_boxes = max(item['boxes'].shape[0] for item in batch)
+    padded_boxes = torch.full(
+        (len(batch), max_boxes, 7),
+        fill_value=-1.0, dtype=torch.float32
+    )
+    padded_labels = torch.full(
+        (len(batch), max_boxes),
+        fill_value=-1, dtype=torch.int64
+    )
+    for i, item in enumerate(batch):
+        n = item['boxes'].shape[0]
+        if n > 0:
+            padded_boxes[i, :n, :] = item['boxes']
+            padded_labels[i, :n]   = item['labels']
+
+    # --- Collect tokens ---
+    tokens = [item['token'] for item in batch]
+
+    return {
+        'image':      images,
+        'lidar':      padded_lidars,
+        'intrinsics': intrinsics,
+        'boxes':      padded_boxes,   # [B, max_boxes, 7]
+        'labels':     padded_labels,  # [B, max_boxes]
+        'token':      tokens
+    }
 
 class NuScenesDataset(Dataset):
     def __init__(self, cache_dir):
@@ -22,7 +112,7 @@ class NuScenesDataset(Dataset):
         return torch.load(self.files[idx])
 
 def get_nuscenes_loader(split='train', batch_size=None, num_workers=None, 
-                         shuffle=None, cache_root=None):
+                         shuffle=None):
     """
     Factory function to create NuScenes data loaders from cached .pt files.
 
@@ -39,10 +129,8 @@ def get_nuscenes_loader(split='train', batch_size=None, num_workers=None,
         num_workers = NUM_WORKERS
     if shuffle is None:
         shuffle = (split == 'train')
-    if cache_root is None:
-        cache_root = CACHE_ROOT
 
-    split_dir = Path(cache_root) / split
+    split_dir = Path(CACHE_ROOT) / split
     if not split_dir.exists():
         raise FileNotFoundError(f"Split directory not found: {split_dir}")
 
@@ -55,12 +143,5 @@ def get_nuscenes_loader(split='train', batch_size=None, num_workers=None,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=(split == 'train'),
-        collate_fn=lambda x: x
+        collate_fn=nuscenes_collate_fn
     )
-
-# Convenience accessors
-def get_train_loader(batch_size=None):
-    return get_nuscenes_loader('train', batch_size=batch_size)
-
-def get_val_loader(batch_size=None):
-    return get_nuscenes_loader('val', batch_size=batch_size)
