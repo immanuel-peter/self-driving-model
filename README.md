@@ -1,352 +1,106 @@
-# Self-Driving Model
+# AutoMoE: Mixture of Experts Self-Driving Model
 
-A comprehensive multi-expert system for autonomous driving that combines perception, motion planning, and end-to-end driving capabilities using multiple datasets and a gating network for intelligent expert selection.
+[![Project Status](https://img.shields.io/badge/status-in%20development-yellowgreen.svg)](https://github.com/immanuel-peter/self-driving-model)
 
-## 🚗 Overview
+This repository contains the code and experiments for building a modular, multi-task self-driving system based on a **Mixture-of-Experts (MoE)** architecture. The goal is to develop a robust model capable of navigating complex environments in the [CARLA simulator](https://carla.org/).
 
-This project implements a sophisticated self-driving model architecture that leverages multiple specialized experts trained on different datasets (Waymo, nuScenes, BDD100K, CARLA, Cosmos) and uses a gating network to intelligently select the most appropriate expert for different driving scenarios.
+## 🤖 Architectural Vision
 
-### Key Features
+The core of this project is a Mixture-of-Experts model. Instead of a single, monolithic network, this architecture uses:
 
-- **Multi-Expert Architecture**: Specialized models for perception, motion planning, and end-to-end driving
-- **Intelligent Gating**: Dynamic expert selection based on driving context and conditions
-- **Multi-Dataset Support**: Training on diverse datasets for robust performance
-- **CARLA Integration**: Real-time simulation and testing capabilities
-- **Comprehensive Evaluation**: Extensive metrics and visualization tools
+1. **Specialized "Expert" Models**: A collection of smaller, fine-tuned neural networks, each mastering a specific perception task (e.g., object detection, drivable area segmentation).
+2. **Gating Network**: A lightweight network that learns to weigh and combine the outputs of the experts based on the current driving context.
 
-## 📁 Project Structure
+This approach is designed to be more modular, interpretable, and efficient than end-to-end models. The final integrated system will be tested and refined in a high-fidelity simulated environment.
 
-```
-self-driving-model/
-│
-├── datasets/                          # Dataset storage and organization
-│   ├── waymo/                         # Waymo Open Dataset
-│   │   ├── raw/                       # Raw Waymo data
-│   │   │   ├── perception/            # Raw perception-focused data
-│   │   │   ├── motion/                # Raw motion planning data
-│   │   │   └── e2e/                   # Raw end-to-end driving data
-│   │   └── preprocessed/              # Preprocessed Waymo data
-│   │       ├── perception/            # Preprocessed perception-focused data
-│   │       ├── motion/                # Preprocessed motion planning data
-│   │       └── e2e/                   # Preprocessed end-to-end driving data
-│   ├── nuscenes/                      # nuScenes dataset
-│   ├── bdd100k/                                   # Berkeley DeepDrive dataset
-│   │   ├── raw/                                   # Raw BDD100K data
-│   │   │   ├── images/
-│   │   │   │   └── 100k/
-│   │   │   │       ├── train/                     # Raw training images
-│   │   │   │       ├── val/                       # Raw validation images
-│   │   │   │       └── test/                      # Raw test images
-│   │   │   └── labels/
-│   │   │       ├── detection2020/                 # Detection labels (JSON)
-│   │   │       ├── drivable/
-│   │   │       │   ├── train/                     # Drivable area masks (train)
-│   │   │       │   └── val/                       # Drivable area masks (val)
-│   │   │       └── segmentation/
-│   │   │           ├── train/                     # Segmentation masks (train)
-│   │   │           └── val/                       # Segmentation masks (val)
-│   │   └── preprocessed/                          # Preprocessed BDD100K data
-│   │       ├── detection/
-│   │       │   ├── train/                         # Preprocessed detection .pt files (train)
-│   │       │   └── val/                           # Preprocessed detection .pt files (val)
-│   │       ├── drivable/
-│   │       │   ├── train/                         # Preprocessed drivable .pt files (train)
-│   │       │   └── val/                           # Preprocessed drivable .pt files (val)
-│   │       └── segmentation/
-│   │           ├── train/                         # Preprocessed segmentation .pt files (train)
-│   │           └── val/                           # Preprocessed segmentation .pt files (val)
-│   ├── carla_expert/                  # CARLA simulation data
-│   └── cosmos/                        # COSMOS dataset
-│
-├── dataloaders/                       # Data loading and preprocessing
-│   ├── waymo_loader.py                # Waymo dataset loader
-│   ├── nuscenes_loader.py             # nuScenes dataset loader
-│   ├── bdd_detection_loader.py        # BDD100K detection dataset loader
-│   ├── bdd_drivable_loader.py         # BDD100K drivable area dataset loader
-│   ├── bdd_segmentation_loader.py     # BDD100K semantic segmentation dataset loader
-│   ├── carla_loader.py                # CARLA dataset loader
-│   └── cosmos_loader.py               # COSMOS dataset loader
-│
-├── models/                            # Neural network models
-│   ├── experts/                       # Specialized expert models
-│   │   ├── waymo_perception.py        # Waymo perception expert
-│   │   ├── waymo_motion.py            # Waymo motion planning expert
-│   │   ├── waymo_e2e.py               # Waymo end-to-end expert
-│   │   ├── nuscenes_expert.py         # nuScenes expert
-│   │   ├── bdd_detection_expert.py    # BDD100K detection expert
-│   │   ├── bdd_drivable_expert.py     # BDD100K drivable area expert
-│   │   ├── bdd_segmentation_expert.py # BDD100K segmentation expert
-│   │   └── carla_expert.py            # CARLA expert
-│   ├── gating/                        # Gating network components
-│   │   ├── gating_network.py          # Expert selection network
-│   │   └── feature_fusion.py          # Feature fusion mechanisms
-│   └── shared/                        # Shared model components
-│       ├── encoders.py                # Feature encoders
-│       └── decoders.py                # Output decoders
-│
-├── training/                          # Training scripts and utilities
-│   ├── train_expert.py                # Expert model training
-│   ├── train_gating.py                # Gating network training
-│   ├── loss_functions.py              # Custom loss functions
-│   └── utils.py                       # Training utilities
-│
-├── inference/                         # Inference and deployment
-│   ├── run_inference.py               # Model inference pipeline
-│   └── carla_agent_wrapper.py         # CARLA integration wrapper
-│
-├── eval/                              # Evaluation and metrics
-│   ├── metrics.py                     # Performance metrics
-│   ├── evaluation_loop.py             # Evaluation pipeline
-│   └── visualization_tools.py         # Result visualization
-│
-├── scripts/                           # Utility scripts
-│   ├── preprocess_waymo.sh            # Waymo preprocessing
-│   ├── preprocess_nuscenes.sh         # nuScenes preprocessing
-│   ├── collect_carla_data.py          # CARLA data collection
-│   └── download_cosmos.sh             # COSMOS download script
-│
-├── docker/                            # Containerization
-│   ├── Dockerfile                     # Docker image definition
-│   ├── docker-compose.yml             # Multi-service setup
-│   └── entrypoint.sh                  # Container entry point
-│
-├── configs/                           # Configuration files
-│   ├── expert_training.yaml           # Expert training config
-│   ├── gating_config.yaml             # Gating network config
-│   └── deployment_config.yaml         # Deployment settings
-│
-├── notebooks/                         # Jupyter notebooks
-│   ├── visualize_datasets.ipynb       # Dataset exploration
-│   └── debug_gating_behavior.ipynb    # Gating analysis
-│
-├── tests/                             # Unit and integration tests
-│   ├── test_expert_inference.py       # Expert inference tests
-│   ├── test_gating_decision.py        # Gating decision tests
-│   └── test_carla_loop.py             # CARLA integration tests
-│
-├── requirements.txt                   # Python dependencies
-├── README.md                          # Project info
-└── LICENSE                            # MIT License
-```
+-----
 
-## 🛠️ Installation
+## 📊 Current Status
 
-### Prerequisites
+The project is in its early stages, with the foundational data pipelines and initial model training scripts now complete.
 
-- Python 3.8+
-- CUDA-compatible GPU (recommended)
-- Docker (for containerized deployment)
+* **✅ Completed**: Data collection and preprocessing pipelines for several large-scale autonomous driving datasets, including **BDD100K**, **nuScenes**, and **CARLA**, have been established. (Unfortunately, I was unable to preprocess **Waymo** datasets due to incompatibility of the Waymo Open Dataset package on various Linux machines. I am looking to come back to it, as well as incorporate the Nvidia **Cosmos** Drive Dreams dataset.)
+* **▶️ In Progress**: The training scripts for the BDD100K expert models are fully implemented. This includes a high-performance version utilizing **DistributedDataParallel (DDP)** for efficient multi-GPU training. The immediate next step is to execute these scripts to train the initial set of expert models.
 
-### Setup
+-----
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/immanuel-peter/self-driving-model.git
-   cd self-driving-model
-   ```
+## 🗺️ Project Roadmap
 
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+This project follows a structured, multi-stage development plan.
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+- ✅ **Stage 1: Data Collection & Preprocessing**
+  - Collect and process all primary datasets (BDD100K, nuScenes, etc.).
+- ▶️ **Stage 2: Expert Training & Evaluation**
+  - Train and evaluate the expert models on their respective primary datasets to create strong, specialized baseline models.
+- **Stage 3: Fine-Tuning on CARLA Data**
+  - Fine-tune the pre-trained experts on data collected from the CARLA simulator to adapt them to the target environment.
+- **Stage 4: Gating Network Implementation**
+  - Design and implement the gating network architecture responsible for combining expert outputs.
+- **Stage 5: Gating Network Training**
+  - Train the gating network using the outputs from the fine-tuned experts, likely on a validation set or new data from CARLA.
+- **Stage 6: Integrated MoE Simulation**
+  - Run the fully integrated MoE model (experts + gating network) in the CARLA simulator to evaluate end-to-end driving performance.
+- **Stage 7: Joint Fine-Tuning (Optional)**
+  - Explore advanced techniques like Reinforcement Learning or Imitation Learning to jointly fine-tune the gating network and the experts within the simulation.
 
-4. **Install CARLA (for simulation)**
-   ```bash
-   # Follow CARLA installation guide: https://carla.readthedocs.io/
-   # Or use Docker:
-   docker pull carlasim/carla:latest
-   ```
+-----
 
-### Docker Setup
+## ⚙️ Setup and Usage
 
-For containerized deployment:
+### 1. Prerequisites
+
+- Git
+- Python 3.9+
+- NVIDIA GPU with CUDA drivers
+
+### 2. Clone Repository
 
 ```bash
-# Build the Docker image
-docker build -t self-driving-model .
-
-# Run with docker-compose
-docker compose up -d
+git clone https://github.com/immanuel-peter/self-driving-model.git
+cd self-driving-model
 ```
 
-## 📊 Datasets
-
-### Supported Datasets
-
-1. **Waymo Open Dataset**
-   - Perception, motion planning, and end-to-end driving
-   - Download: [Waymo Open Dataset](https://waymo.com/open/)
-
-2. **nuScenes**
-   - Multi-modal autonomous driving dataset
-   - Download: [nuScenes](https://www.nuscenes.org/)
-
-3. **BDD100K**
-   - Berkeley DeepDrive dataset
-   - Download: [BDD100K](https://bdd-data.berkeley.edu/)
-
-4. **CARLA**
-   - Simulation environment for data collection
-   - Download: [CARLA](https://carla.org/)
-
-5. **COSMOS**
-   - Nvidia Physical AI dataset for autonomous driving
-   - Download: [Cosmos](https://huggingface.co/datasets/nvidia/PhysicalAI-Autonomous-Vehicle-Cosmos-Drive-Dreams)
-
-### Data Preprocessing
-
-Run the preprocessing scripts for each dataset:
+### 3. Setup Environment & Dependencies
 
 ```bash
-# Waymo preprocessing
-bash scripts/preprocess_waymo.sh
+# Create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# nuScenes preprocessing
-bash scripts/preprocess_nuscenes.sh
-
-# CARLA data collection
-python scripts/collect_carla_data.py
-
-# COSMOS download
-bash scripts/download_cosmos.sh
+# Install required packages
+pip install -r requirements.txt
 ```
 
-## 🏗️ Architecture
+### 4. Download and Preprocess Datasets
 
-### Multi-Expert System
+Follow the setup instructions detailed in the README files within the `datasets/` directory.
 
-The system consists of specialized expert models:
+### 5. Train an Expert Model
 
-- **Perception Experts**: Object detection, semantic segmentation
-- **Motion Experts**: Trajectory planning, behavior prediction
-- **End-to-End Experts**: Direct sensor-to-control mapping
+To train an expert on a multi-GPU machine, use the DDP training script with `torchrun`.
 
-### Gating Network
-
-The gating network dynamically selects the most appropriate expert based on:
-- Current driving scenario
-- Environmental conditions
-- Sensor data quality
-- Historical performance
-
-### Feature Fusion
-
-Combines features from multiple experts and sensors for robust decision-making.
-
-## 🚀 Usage
-
-### Training
-
-1. **Train Expert Models**
-   ```bash
-   python training/train_expert.py --config configs/expert_training.yaml
-   ```
-
-2. **Train Gating Network**
-   ```bash
-   python training/train_gating.py --config configs/gating_config.yaml
-   ```
-
-### Inference
-
-1. **Run Inference**
-   ```bash
-   python inference/run_inference.py --model_path /path/to/model --input /path/to/data
-   ```
-
-2. **CARLA Integration**
-   ```bash
-   python inference/carla_agent_wrapper.py --carla_host localhost --carla_port 2000
-   ```
-
-### Evaluation
+**Example: Training the Detection Expert on 2 GPUs**
 
 ```bash
-python eval/evaluation_loop.py --model_path /path/to/model --dataset waymo
+torchrun --nproc_per_node=2 --standalone \
+    training/train_bdd100k_ddp.py \
+    --task detection \
+    --epochs 50 \
+    --batch_size 64 \
+    --learning_rate 2e-4 \
+    --num_workers 8 \
+    --run_name "detection_a100_run"
 ```
 
-## 📈 Performance Metrics
+-----
 
-The system evaluates performance using:
+## 📂 Repository Structure
 
-- **Perception Metrics**: mAP, IoU, precision/recall
-- **Motion Metrics**: ADE, FDE, collision rate
-- **End-to-End Metrics**: Success rate, smoothness, safety
-- **Gating Metrics**: Expert selection accuracy, switching frequency
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test categories
-python -m pytest tests/test_expert_inference.py
-python -m pytest tests/test_gating_decision.py
-python -m pytest tests/test_carla_loop.py
 ```
-
-## 📝 Configuration
-
-### Expert Training Configuration
-
-Edit `configs/expert_training.yaml` to customize:
-- Model architecture parameters
-- Training hyperparameters
-- Dataset configurations
-- Loss function weights
-
-### Gating Configuration
-
-Edit `configs/gating_config.yaml` to adjust:
-- Gating network architecture
-- Expert selection criteria
-- Feature fusion parameters
-
-## 🔧 Development
-
-### Adding New Experts
-
-1. Create expert model in `models/experts/`
-2. Add corresponding data loader in `dataloaders/`
-3. Update gating network to include new expert
-4. Add training configuration
-
-### Adding New Datasets
-
-1. Create dataset loader in `dataloaders/`
-2. Add preprocessing script in `scripts/`
-3. Update configuration files
-4. Add evaluation metrics
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Waymo for the Open Dataset
-- nuScenes team for the multi-modal dataset
-- Berkeley DeepDrive for BDD100K
-- CARLA team for the simulation environment
-- COSMOS contributors for the multi-agent dataset
-
----
-
-**Note**: This is a project.
+├── dataloaders/    # PyTorch DataLoader implementations for each dataset.
+├── datasets/       # Instructions and scripts for downloading/preprocessing data.
+├── models/         # Neural network architectures for experts and other components.
+├── notebooks/      # Jupyter notebooks for exploration and analysis.
+├── scripts/        # Utility and processing scripts.
+└── training/       # Core training and evaluation loops.
+```
