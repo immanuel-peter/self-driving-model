@@ -1,4 +1,4 @@
-# training/train_bdd100k.py
+# training/train_bdd100k_ddp.py
 
 import argparse
 import torch

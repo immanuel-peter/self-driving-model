@@ -9,6 +9,11 @@ from torchvision.ops import box_iou, box_convert
 from tqdm import tqdm
 import json
 from pathlib import Path
+import sys
+import os
+
+# Add the project root to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import models and dataloaders
 from hungarian_matcher import HungarianMatcher

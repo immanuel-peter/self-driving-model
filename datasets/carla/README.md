@@ -10,6 +10,30 @@ CARLA-generated datasets like this are ideal for developing and evaluating algor
 
 ---
 
+## Quick Start
+
+### 🔄 Download Images from Hugging Face
+
+The entire dataset—including all folders, subfolders, and images—is stored on the Hugging Face Hub as a [Datasets repository](https://huggingface.co/docs/hub/datasets-repos).  
+You can **clone the raw CARLA dataset with the original folder structure fully preserved** using Git and Git LFS:
+
+```bash
+git lfs install
+git clone https://huggingface.co/datasets/immanuelpeter/carla-autopilot-images datasets/carla/raw
+````
+
+This will populate the following structure:
+
+```
+datasets/carla/raw/
+├── run_001/
+├── run_002/
+└── run_003/
+    ...
+```
+
+> **Tip:** Make sure you have [Git LFS](https://git-lfs.github.com/) installed so images and other large files are downloaded properly.
+
 ## Setup Guide
 
 This guide will walk you through generating and preprocessing a CARLA autopilot dataset.
