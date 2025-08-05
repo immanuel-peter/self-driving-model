@@ -1,4 +1,4 @@
-# Ignore raw datasets
+# Ignore datasets
 datasets/bdd100k/raw/
 datasets/bdd100k/preprocessed/
 datasets/nuscenes/mini/
@@ -8,6 +8,9 @@ datasets/cosmos/raw/
 datasets/waymo/raw
 datasets/carla/raw
 datasets/carla/preprocessed
+
+models/checkpoints/
+models/runs/
 
 # Optional: ignore zip files if still present
 *.zip

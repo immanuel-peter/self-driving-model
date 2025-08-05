@@ -378,7 +378,7 @@ class BDDTrainer:
         return avg_loss
 
     def save_checkpoint(self, epoch, is_best=False):
-        ckpt_dir = Path(f"models/checkpoints/{self.task}_expert/{self.config['run_name']}")
+        ckpt_dir = Path(f"models/checkpoints/bdd100k_{self.task}_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         
         checkpoint = {

@@ -11,3 +11,4 @@ pyquaternion
 shapely>=2.0.0
 matplotlib>=3.6.0
 seaborn
+tensorboard
