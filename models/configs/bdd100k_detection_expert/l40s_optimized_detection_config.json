@@ -1,0 +1,13 @@
+{
+  "task": "detection",
+  "epochs": 100,
+  "batch_size": 64,
+  "learning_rate": 0.0002,
+  "weight_decay": 0.0001,
+  "device": "cuda",
+  "num_workers": 8,
+  "run_name": "l40s_optimized_detection",
+  "cost_class": 1.0,
+  "cost_bbox": 5.0,
+  "cost_giou": 2.0
+}

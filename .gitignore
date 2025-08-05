@@ -9,6 +9,7 @@ datasets/waymo/raw
 datasets/carla/raw
 datasets/carla/preprocessed
 
+# Ignore checkpoints and runs
 models/checkpoints/
 models/runs/
 
