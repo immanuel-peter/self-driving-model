@@ -1,13 +1,17 @@
-# training/train_nuscenes.py
+# training/train_nuscenes_expert_ddp.py
 
 import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import json
 from pathlib import Path
+import os
 
 from hungarian_matcher import HungarianMatcher
 from models.experts import NuScenesExpert
@@ -42,14 +46,26 @@ class NuScenesTrainer:
             cost_giou=self.config.get('cost_giou',2.0)
         )
         
-        self.writer = SummaryWriter(f"models/runs/nuscenes_expert_{config['run_name']}")
+        # Only rank 0 should log to tensorboard
+        if dist.is_initialized() and dist.get_rank() == 0:
+            self.writer = SummaryWriter(f"models/runs/nuscenes_expert_{config['run_name']}")
+        else:
+            self.writer = None
         self.best_val_loss = float('inf')
         
     def train_epoch(self, epoch):
         self.model.train()
         total_loss = 0
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Train]")
+        # Only show progress bar on rank 0
+        if dist.is_initialized() and dist.get_rank() == 0:
+            pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Train]")
+        else:
+            pbar = self.train_loader
         
+        # Set epoch for distributed samplers
+        if hasattr(self.train_loader, 'sampler') and hasattr(self.train_loader.sampler, 'set_epoch'):
+            self.train_loader.sampler.set_epoch(epoch)
+
         for batch in pbar:
             self.optimizer.zero_grad()
             
@@ -106,21 +122,32 @@ class NuScenesTrainer:
             self.scheduler.step()
             
             total_loss += loss.item()
-            pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+            if dist.is_initialized() and dist.get_rank() == 0:
+                pbar.set_postfix({'loss': f'{loss.item():.4f}'})
 
-            step = epoch * len(self.train_loader) + pbar.n
-            self.writer.add_scalar('train/loss_batch', loss.item(), step)
-            self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], step)
+            if self.writer is not None:
+                step = epoch * len(self.train_loader) + (pbar.n if hasattr(pbar, 'n') else 0)
+                self.writer.add_scalar('train/loss_batch', loss.item(), step)
+                self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], step)
             
         avg_loss = total_loss / len(self.train_loader)
-        self.writer.add_scalar('train/loss_epoch', avg_loss, epoch)
+        if self.writer is not None:
+            self.writer.add_scalar('train/loss_epoch', avg_loss, epoch)
         return avg_loss
 
     def validate(self, epoch):
         self.model.eval()
         total_loss = 0
-        pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1} [Val]")
+        # Only show progress bar on rank 0
+        if dist.is_initialized() and dist.get_rank() == 0:
+            pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1} [Val]")
+        else:
+            pbar = self.val_loader
         
+        # Set epoch for distributed samplers
+        if hasattr(self.val_loader, 'sampler') and hasattr(self.val_loader.sampler, 'set_epoch'):
+            self.val_loader.sampler.set_epoch(epoch)
+
         with torch.no_grad():
             for batch in pbar:
                 batch_dict = {
@@ -164,41 +191,59 @@ class NuScenesTrainer:
 
                 loss = loss_cls + self.config.get('bbox_loss_weight', 5.0) * loss_bbox
                 total_loss += loss.item()
-                pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+                if dist.is_initialized() and dist.get_rank() == 0:
+                    pbar.set_postfix({'loss': f'{loss.item():.4f}'})
 
         avg_loss = total_loss / len(self.val_loader)
-        self.writer.add_scalar('val/loss_epoch', avg_loss, epoch)
+        if self.writer is not None:
+            self.writer.add_scalar('val/loss_epoch', avg_loss, epoch)
         
         if avg_loss < self.best_val_loss:
             self.best_val_loss = avg_loss
-            print(f"🎉 New best model saved with val loss: {self.best_val_loss:.4f}")
-            self.save_checkpoint(is_best=True)
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                print(f"🎉 New best model saved with val loss: {self.best_val_loss:.4f}")
+                self.save_checkpoint(is_best=True)
             
         return avg_loss
 
     def save_checkpoint(self, is_best=False):
+        # Only save on rank 0
+        if dist.is_initialized() and dist.get_rank() != 0:
+            return
+        # Synchronize before saving
+        if dist.is_initialized():
+            dist.barrier()
+
         ckpt_dir = Path(f"models/checkpoints/nuscenes_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         
-        # We save only the model state_dict, which is common.
+        # Save the underlying model if wrapped in DDP
+        model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
         if is_best:
-            torch.save(self.model.state_dict(), ckpt_dir / "best_model.pth")
+            torch.save(model_to_save.state_dict(), ckpt_dir / "best_model.pth")
+
+        # Synchronize after saving
+        if dist.is_initialized():
+            dist.barrier()
             
     def train(self):
-        print(f"🚀 Starting training for NuScenes expert...")
-        print(f"Device: {self.device}, Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            print(f"🚀 Starting training for NuScenes expert...")
+            print(f"Device: {self.device}, Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         
         for epoch in range(self.config['epochs']):
             train_loss = self.train_epoch(epoch)
             val_loss = self.validate(epoch)
-            print(f"Epoch {epoch+1}/{self.config['epochs']} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                print(f"Epoch {epoch+1}/{self.config['epochs']} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
             
-        self.writer.close()
-        print("✅ Training completed!")
-
+        if self.writer is not None:
+            self.writer.close()
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            print("✅ Training completed!")
 
 def main():
-    parser = argparse.ArgumentParser(description='Train NuScenes Expert Model')
+    parser = argparse.ArgumentParser(description='Train NuScenes Expert Model (DDP)')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
@@ -211,23 +256,72 @@ def main():
     parser.add_argument('--cost_giou', type=float, default=2.0, help='GIoU cost for Hungarian matcher')
     parser.add_argument('--bbox_loss_weight', type=float, default=5.0, help='Weight for bbox regression loss')
     parser.add_argument('--num_queries', type=int, default=100, help='Number of object queries for multi-object detection')
+    parser.add_argument('--local_rank', type=int, default=0, help='DDP: local GPU index')
     args = parser.parse_args()
 
+    # Initialize distributed training FIRST (before any model/optimizer construction)
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        dist.init_process_group(backend='nccl', init_method='env://')
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device('cuda', args.local_rank)
+        torch.backends.cudnn.benchmark = True
+    else:
+        device = torch.device(args.device)
+
     config = vars(args)
-    device = torch.device(args.device)
 
     model = NuScenesExpert(num_queries=args.num_queries)
-    train_loader = get_nuscenes_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
-    val_loader = get_nuscenes_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
+    # Get base loaders to obtain dataset and collate_fn
+    base_train_loader = get_nuscenes_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
+    base_val_loader = get_nuscenes_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
+    train_dataset = base_train_loader.dataset
+    val_dataset = base_val_loader.dataset
+
+    # Wrap model in DDP if distributed training is enabled
+    if dist.is_initialized():
+        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+
+    # Create distributed samplers and dataloaders
+    if dist.is_initialized():
+        train_sampler = DistributedSampler(train_dataset, shuffle=True)
+        val_sampler = DistributedSampler(val_dataset, shuffle=False)
+
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            sampler=train_sampler,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=True,
+            collate_fn=getattr(base_train_loader, 'collate_fn', None)
+        )
+
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            sampler=val_sampler,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=False,
+            collate_fn=getattr(base_val_loader, 'collate_fn', None)
+        )
+    else:
+        train_loader = base_train_loader
+        val_loader = base_val_loader
     
     # Save config
-    config_dir = Path(f"models/configs/nuscenes_expert")
-    config_dir.mkdir(parents=True, exist_ok=True)
-    with open(config_dir / f"{args.run_name}_config.json", 'w') as f:
-        json.dump(config, f, indent=2)
+    if not dist.is_initialized() or dist.get_rank() == 0:
+        config_dir = Path(f"models/configs/nuscenes_expert")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        with open(config_dir / f"{args.run_name}_config.json", 'w') as f:
+            json.dump(config, f, indent=2)
 
     trainer = NuScenesTrainer(model, train_loader, val_loader, device, config)
     trainer.train()
+
+    # Clean up distributed training
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 if __name__ == '__main__':
     main()
