@@ -1,6 +1,5 @@
 #!/bin/bash
 # training/train_nuscenes_expert_ddp.sh
-# DDP launch script for NuScenes expert with optimal config for 2×A100
 
 set -euo pipefail
 
