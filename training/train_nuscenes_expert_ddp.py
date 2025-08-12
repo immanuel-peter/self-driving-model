@@ -12,6 +12,9 @@ from tqdm import tqdm
 import json
 from pathlib import Path
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hungarian_matcher import HungarianMatcher
 from models.experts import NuScenesExpert
@@ -19,7 +22,11 @@ from dataloaders.nuscenes_loader import get_nuscenes_loader
 
 class NuScenesTrainer:
     def __init__(self, model, train_loader, val_loader, device, config):
-        self.model = model.to(device)
+        if isinstance(model, DDP):
+            model.module.to(device)
+            self.model = model
+        else:
+            self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
@@ -202,27 +209,22 @@ class NuScenesTrainer:
             self.best_val_loss = avg_loss
             if not dist.is_initialized() or dist.get_rank() == 0:
                 print(f"🎉 New best model saved with val loss: {self.best_val_loss:.4f}")
-                self.save_checkpoint(is_best=True)
+            self.save_checkpoint(is_best=True)
             
         return avg_loss
 
     def save_checkpoint(self, is_best=False):
-        # Only save on rank 0
-        if dist.is_initialized() and dist.get_rank() != 0:
-            return
-        # Synchronize before saving
         if dist.is_initialized():
             dist.barrier()
 
         ckpt_dir = Path(f"models/checkpoints/nuscenes_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save the underlying model if wrapped in DDP
+
+        # Save only on rank 0, but compute model_to_save uniformly
         model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
-        if is_best:
+        if is_best and (not dist.is_initialized() or dist.get_rank() == 0):
             torch.save(model_to_save.state_dict(), ckpt_dir / "best_model.pth")
 
-        # Synchronize after saving
         if dist.is_initialized():
             dist.barrier()
             
@@ -262,8 +264,9 @@ def main():
     # Initialize distributed training FIRST (before any model/optimizer construction)
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         dist.init_process_group(backend='nccl', init_method='env://')
-        torch.cuda.set_device(args.local_rank)
-        device = torch.device('cuda', args.local_rank)
+        local_rank = int(os.environ.get('LOCAL_RANK', args.local_rank))
+        torch.cuda.set_device(local_rank)
+        device = torch.device('cuda', local_rank)
         torch.backends.cudnn.benchmark = True
     else:
         device = torch.device(args.device)
@@ -271,20 +274,29 @@ def main():
     config = vars(args)
 
     model = NuScenesExpert(num_queries=args.num_queries)
-    # Get base loaders to obtain dataset and collate_fn
     base_train_loader = get_nuscenes_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
     base_val_loader = get_nuscenes_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
     train_dataset = base_train_loader.dataset
     val_dataset = base_val_loader.dataset
 
-    # Wrap model in DDP if distributed training is enabled
+    # Move model to device and wrap in DDP if distributed training is enabled
     if dist.is_initialized():
-        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+        local_rank = int(os.environ.get('LOCAL_RANK', 0))
+        model.to(device)
+        model = DDP(
+            model,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=True,
+            static_graph=False,
+        )
+    else:
+        model.to(device)
 
     # Create distributed samplers and dataloaders
     if dist.is_initialized():
-        train_sampler = DistributedSampler(train_dataset, shuffle=True)
-        val_sampler = DistributedSampler(val_dataset, shuffle=False)
+        train_sampler = DistributedSampler(train_dataset, shuffle=True, drop_last=True)
+        val_sampler = DistributedSampler(val_dataset, shuffle=False, drop_last=False)
 
         train_loader = torch.utils.data.DataLoader(
             train_dataset,

@@ -31,3 +31,5 @@ __pycache__/
 # Jupyter Notebook checkpoints and outputs
 notebooks/.ipynb_checkpoints/
 */.ipynb_checkpoints/
+
+logs/
