@@ -62,6 +62,9 @@ From the [BDD100K Data Index](https://dl.cv.ethz.ch/bdd100k/data/), download:
   * `100k_images_train.zip`
   * `100k_images_val.zip`
   * `100k_images_test.zip`
+  * `10k_images_train.zip`
+  * `10k_images_val.zip`
+  * `10k_images_test.zip`
 
 * Labels:
 
@@ -75,6 +78,9 @@ From the [BDD100K Data Index](https://dl.cv.ethz.ch/bdd100k/data/), download:
 unzip 100k_images_train.zip -d .
 unzip 100k_images_val.zip -d .
 unzip 100k_images_test.zip -d .
+unzip 10k_images_train.zip -d .
+unzip 10k_images_val.zip -d .
+unzip 10k_images_test.zip -d .
 unzip bdd100k_det_20_labels_trainval.zip -d .
 unzip bdd100k_drivable_labels_trainval.zip -d .
 unzip bdd100k_ins_seg_labels_trainval.zip -d .
@@ -87,7 +93,11 @@ Restructure folders to match this format:
 ```
 datasets/bdd100k/raw/
 ├── images
-│   └── 100k
+│   ├── 100k
+│   │   ├── train/
+│   │   ├── val/
+│   │   └── test/
+│   └── 10k
 │       ├── train/
 │       ├── val/
 │       └── test/
@@ -105,6 +115,7 @@ datasets/bdd100k/raw/
 
 ```bash
 mkdir -p images/100k && mv images/{train,val,test} images/100k/
+mkdir -p images/10k && mv images/{train,val,test} images/10k/
 mkdir -p labels/detection2020 && mv labels/det_20/* labels/detection2020/
 
 mkdir -p labels/drivable/{train,val}
@@ -146,7 +157,9 @@ datasets/bdd100k/preprocessed/
 ```
 datasets/bdd100k/
 ├── raw/
-│   ├── images/100k/{train,val,test}
+│   ├── images/
+│   │   ├── 100k/{train,val,test}
+│   │   └── 10k/{train,val,test}
 │   └── labels/
 │       ├── detection2020/
 │       ├── drivable/{train,val}

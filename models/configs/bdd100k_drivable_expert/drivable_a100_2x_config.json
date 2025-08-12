@@ -1,0 +1,14 @@
+{
+  "task": "drivable",
+  "epochs": 50,
+  "batch_size": 48,
+  "learning_rate": 0.0002,
+  "weight_decay": 1e-05,
+  "device": "cuda",
+  "num_workers": 12,
+  "run_name": "drivable_a100_2x",
+  "cost_class": 1.0,
+  "cost_bbox": 5.0,
+  "cost_giou": 2.0,
+  "local_rank": 0
+}

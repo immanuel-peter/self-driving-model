@@ -89,7 +89,10 @@ def main():
     parser.add_argument("--out_dir", type=str, default="datasets/bdd100k/preprocessed")
     args = parser.parse_args()
 
-    image_root = Path(args.raw_dir) / "images" / "100k"
+    if args.task == "segmentation":
+        image_root = Path(args.raw_dir) / "images" / "10k"
+    else:
+        image_root = Path(args.raw_dir) / "images" / "100k"
     out_root = Path(args.out_dir) / args.task
 
     if args.task == "detection":

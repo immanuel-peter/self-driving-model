@@ -27,7 +27,12 @@ from dataloaders import get_bdd_detection_loader, get_bdd_drivable_loader, get_b
 class BDDTrainer:
     def __init__(self, task, model, train_loader, val_loader, device, config):
         self.task = task
-        self.model = model.to(device)
+        # Ensure model is on the correct device. If wrapped in DDP, move the underlying module.
+        if isinstance(model, DDP):
+            model.module.to(device)
+            self.model = model
+        else:
+            self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
@@ -395,7 +400,7 @@ class BDDTrainer:
         avg_loss = total_loss / len(self.val_loader)
         # mean metrics across all batches
         final = {k: sum(vs)/len(vs) for k,vs in agg.items()}
-        
+
         # Log to tensorboard (only on rank 0)
         if self.writer is not None:
             self.writer.add_scalar('val/loss_epoch', avg_loss, epoch)
@@ -405,31 +410,45 @@ class BDDTrainer:
             else:
                 self.writer.add_scalar('val/avg_iou',   final['avg_iou'],   epoch)
                 self.writer.add_scalar('val/recall_0.5', final['recall_0.5'], epoch)
-        
-        # checkpoint logic unchanged (only on rank 0)
-        if avg_loss < self.best_val_loss:
-            self.best_val_loss = avg_loss
-            if dist.is_initialized() and dist.get_rank() == 0:
+
+        # Synchronized checkpoint logic across all ranks
+        is_best_local = avg_loss < self.best_val_loss
+        if dist.is_initialized():
+            device = self.device if isinstance(self.device, torch.device) else torch.device('cuda')
+            if dist.get_rank() == 0:
+                is_best_t = torch.tensor(1 if is_best_local else 0, device=device)
+                best_val_t = torch.tensor(avg_loss if is_best_local else self.best_val_loss, dtype=torch.float32, device=device)
+            else:
+                is_best_t = torch.tensor(0, device=device)
+                best_val_t = torch.tensor(0.0, dtype=torch.float32, device=device)
+            # Broadcast decision and best value from rank 0
+            dist.broadcast(is_best_t, src=0)
+            dist.broadcast(best_val_t, src=0)
+            is_best = bool(int(is_best_t.item()))
+            self.best_val_loss = float(best_val_t.item())
+            if is_best and dist.get_rank() == 0:
                 print(f"🎉 New best model saved with val loss: {self.best_val_loss:.4f}")
                 self.save_checkpoint(epoch, is_best=True)
-        
+            # Ensure all ranks wait until checkpoint save completes
+            dist.barrier()
+        else:
+            if is_best_local:
+                self.best_val_loss = avg_loss
+                self.save_checkpoint(epoch, is_best=True)
+
         return avg_loss
 
     def save_checkpoint(self, epoch, is_best=False):
-        # Only save on rank 0
+        # Only rank 0 performs the actual save. All synchronization happens in caller.
         if dist.is_initialized() and dist.get_rank() != 0:
             return
-        
-        # Synchronize before saving to prevent race conditions
-        if dist.is_initialized():
-            dist.barrier()
-            
+
         ckpt_dir = Path(f"models/checkpoints/bdd100k_{self.task}_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Save the underlying model (not the DDP wrapper)
         model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
-        
+
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model_to_save.state_dict(),
@@ -438,13 +457,9 @@ class BDDTrainer:
             'best_val_loss': self.best_val_loss,
             'config': self.config
         }
-        
+
         if is_best:
             torch.save(checkpoint, ckpt_dir / "best.pth")
-        
-        # Synchronize after saving
-        if dist.is_initialized():
-            dist.barrier()
     
     def train(self):
         # Only print on rank 0
@@ -486,8 +501,9 @@ def main():
     # Initialize distributed training FIRST (before any model/optimizer construction)
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         dist.init_process_group(backend='nccl', init_method='env://')
-        torch.cuda.set_device(args.local_rank)
-        device = torch.device('cuda', args.local_rank)
+        local_rank = int(os.environ.get('LOCAL_RANK', 0))
+        torch.cuda.set_device(local_rank)
+        device = torch.device('cuda', local_rank)
         # Enable cuDNN benchmark for better performance
         torch.backends.cudnn.benchmark = True
     else:
@@ -518,8 +534,14 @@ def main():
     
     # Wrap model in DDP if distributed training is enabled
     if dist.is_initialized():
-        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
-    
+        # Move the model to the appropriate GPU before wrapping with DDP
+        model = model.to(device)
+        ddp_device_index = device.index if hasattr(device, 'index') else int(os.environ.get('LOCAL_RANK', 0))
+        model = DDP(model, device_ids=[ddp_device_index], output_device=ddp_device_index)
+    else:
+        # Non-distributed: still move to the selected device
+        model = model.to(device)
+
     # Create distributed samplers and dataloaders
     if dist.is_initialized():
         train_sampler = DistributedSampler(train_dataset, shuffle=True)
@@ -565,13 +587,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-"""
-torchrun --nproc_per_node=2 --standalone \
-        training/train_bdd100k_ddp.py \
-        --task detection \
-        --epochs 50 \
-        --batch_size 32 \
-        --learning_rate 1e-4 \
-        --run_name detection_ddp
-"""
