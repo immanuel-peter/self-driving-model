@@ -1,1 +1,3 @@
-# Make it a package
+from .hungarian_matcher import HungarianMatcher
+
+__all__ = ["HungarianMatcher"]
