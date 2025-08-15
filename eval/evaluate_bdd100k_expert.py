@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torchvision.ops import box_convert, box_iou
+import torchvision.transforms as T
 
 # Local imports
 from models.experts import (
@@ -203,19 +204,23 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--imagenet_norm", action='store_true')
     args = parser.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
 
     if args.task == "detection":
         model = BDDDetectionExpert()
-        base_loader = get_bdd_detection_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers)
+        transform = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) if args.imagenet_norm else None
+        base_loader = get_bdd_detection_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers, transform=transform)
     elif args.task == "drivable":
         model = BDDDrivableExpert()
-        base_loader = get_bdd_drivable_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers)
+        transform = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) if args.imagenet_norm else None
+        base_loader = get_bdd_drivable_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers, transform=transform)
     else:
         model = BDDSegmentationExpert()
-        base_loader = get_bdd_segmentation_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers)
+        transform = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) if args.imagenet_norm else None
+        base_loader = get_bdd_segmentation_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers, transform=transform)
 
     model.to(device)
     ckpt = load_bdd_checkpoint(model, args.task, args.run_name, map_location=str(device))

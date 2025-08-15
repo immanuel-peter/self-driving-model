@@ -10,6 +10,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.ops import box_iou, box_convert
+import torchvision.transforms as T
 from tqdm import tqdm
 import json
 from pathlib import Path
@@ -60,12 +61,21 @@ class BDDTrainer:
         else: 
             self.loss_fn = nn.CrossEntropyLoss(ignore_index=255)
         
-        # Only rank 0 should log to tensorboard
-        if dist.is_initialized() and dist.get_rank() == 0:
+        # Log to TensorBoard on single-process or rank 0
+        if (not dist.is_initialized()) or (dist.get_rank() == 0):
             self.writer = SummaryWriter(f"models/runs/bdd100k_{self.task}_expert_{self.config['run_name']}")
         else:
             self.writer = None
         self.best_val_loss = float('inf')
+        
+    def load_training_state(self, checkpoint):
+        opt_state = checkpoint.get('optimizer_state_dict')
+        if opt_state is not None:
+            self.optimizer.load_state_dict(opt_state)
+        sched_state = checkpoint.get('scheduler_state_dict')
+        if sched_state is not None:
+            self.scheduler.load_state_dict(sched_state)
+        self.best_val_loss = float(checkpoint.get('best_val_loss', self.best_val_loss))
         
     def train_epoch(self, epoch):
         self.model.train()
@@ -77,8 +87,8 @@ class BDDTrainer:
         if hasattr(self.val_loader, 'sampler') and hasattr(self.val_loader.sampler, 'set_epoch'):
             self.val_loader.sampler.set_epoch(epoch)
         
-        # Only show progress bar on rank 0
-        if dist.is_initialized() and dist.get_rank() == 0:
+        # Show progress bar on single-process or rank 0
+        if (not dist.is_initialized()) or (dist.get_rank() == 0):
             pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Train]")
         else:
             pbar = self.train_loader
@@ -98,8 +108,8 @@ class BDDTrainer:
             
             total_loss += loss.item()
             
-            # Only update progress bar on rank 0
-            if dist.is_initialized() and dist.get_rank() == 0:
+            # Update progress bar on single-process or rank 0
+            if (not dist.is_initialized()) or (dist.get_rank() == 0):
                 pbar.set_postfix({'loss': f'{loss.item():.4f}'})
             
             # Log to tensorboard (only on rank 0)
@@ -374,8 +384,8 @@ class BDDTrainer:
         else:
             agg = {'pixel_acc': [], 'mean_iou': []}
         
-        # Only show progress bar on rank 0
-        if dist.is_initialized() and dist.get_rank() == 0:
+        # Show progress bar on single-process or rank 0
+        if (not dist.is_initialized()) or (dist.get_rank() == 0):
             pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1} [Val]")
         else:
             pbar = self.val_loader
@@ -390,8 +400,8 @@ class BDDTrainer:
             for k,v in mets.items():
                 agg[k].append(v)
             
-            # Only update progress bar on rank 0
-            if dist.is_initialized() and dist.get_rank() == 0:
+            # Update progress bar on single-process or rank 0
+            if (not dist.is_initialized()) or (dist.get_rank() == 0):
                 pbar.set_postfix({
                     'val_loss': f"{loss:.4f}",
                     **{k: f"{v:.3f}" for k,v in mets.items()}
@@ -462,8 +472,8 @@ class BDDTrainer:
             torch.save(checkpoint, ckpt_dir / "best.pth")
     
     def train(self):
-        # Only print on rank 0
-        if dist.is_initialized() and dist.get_rank() == 0:
+        # Print on single-process or rank 0
+        if (not dist.is_initialized()) or (dist.get_rank() == 0):
             print(f"🚀 Starting training for BDD100K {self.task} expert...")
             print(f"Device: {self.device}, Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
         
@@ -471,15 +481,15 @@ class BDDTrainer:
             train_loss = self.train_epoch(epoch)
             val_loss = self.validate(epoch)
             
-            # Only print on rank 0
-            if dist.is_initialized() and dist.get_rank() == 0:
+            # Print on single-process or rank 0
+            if (not dist.is_initialized()) or (dist.get_rank() == 0):
                 print(f"Epoch {epoch+1}/{self.config['epochs']} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
         
         if self.writer is not None:
             self.writer.close()
             
-        # Only print on rank 0
-        if dist.is_initialized() and dist.get_rank() == 0:
+        # Print on single-process or rank 0
+        if (not dist.is_initialized()) or (dist.get_rank() == 0):
             print("✅ Training completed!")
 
 def main():
@@ -495,6 +505,10 @@ def main():
     parser.add_argument('--cost_class', type=float, default=1.0, help='Classification cost for Hungarian matcher (detection only)')
     parser.add_argument('--cost_bbox', type=float, default=5.0, help='BBox L1 cost for Hungarian matcher (detection only)')
     parser.add_argument('--cost_giou', type=float, default=2.0, help='GIoU cost for Hungarian matcher (detection only)')
+    parser.add_argument('--bbox_loss_weight', type=float, default=2.0, help='Weight for bbox regression loss (detection only)')
+    parser.add_argument('--imagenet_norm', action='store_true', help='Apply ImageNet normalization to images')
+    parser.add_argument('--resume_from', type=str, default='', help='Path to checkpoint to resume from (best.pth)')
+    parser.add_argument('--resume_mode', type=str, choices=['model','full'], default='model', help='Resume only model or full optimizer/scheduler state')
     parser.add_argument('--local_rank', type=int, default=0, help='DDP: local GPU index')
     args = parser.parse_args()
     
@@ -512,23 +526,27 @@ def main():
     config = vars(args)
     
     # --- Select Model and Dataloaders ---
+    imagenet_transform = None
+    if args.imagenet_norm:
+        imagenet_transform = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
     if args.task == 'detection':
         model = BDDDetectionExpert()
         # Get base loaders to preserve collate_fn
-        base_train_loader = get_bdd_detection_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
-        base_val_loader = get_bdd_detection_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
+        base_train_loader = get_bdd_detection_loader('train', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
+        base_val_loader = get_bdd_detection_loader('val', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
         train_dataset = base_train_loader.dataset
         val_dataset = base_val_loader.dataset
     elif args.task == 'drivable':
         model = BDDDrivableExpert()
-        base_train_loader = get_bdd_drivable_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
-        base_val_loader = get_bdd_drivable_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
+        base_train_loader = get_bdd_drivable_loader('train', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
+        base_val_loader = get_bdd_drivable_loader('val', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
         train_dataset = base_train_loader.dataset
         val_dataset = base_val_loader.dataset
     elif args.task == 'segmentation':
         model = BDDSegmentationExpert()
-        base_train_loader = get_bdd_segmentation_loader('train', batch_size=args.batch_size, num_workers=args.num_workers)
-        base_val_loader = get_bdd_segmentation_loader('val', batch_size=args.batch_size, num_workers=args.num_workers)
+        base_train_loader = get_bdd_segmentation_loader('train', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
+        base_val_loader = get_bdd_segmentation_loader('val', batch_size=args.batch_size, num_workers=args.num_workers, transform=imagenet_transform)
         train_dataset = base_train_loader.dataset
         val_dataset = base_val_loader.dataset
     
@@ -579,6 +597,19 @@ def main():
             json.dump(config, f, indent=2)
     
     trainer = BDDTrainer(args.task, model, train_loader, val_loader, device, config)
+
+    # --- Resume from checkpoint (fine-tuning) ---
+    if args.resume_from:
+        ckpt_path = Path(args.resume_from)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"--resume_from not found: {ckpt_path}")
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+        model_to_load = trainer.model.module if hasattr(trainer.model, 'module') else trainer.model
+        model_to_load.load_state_dict(state_dict, strict=True)
+        if args.resume_mode == 'full' and isinstance(checkpoint, dict):
+            trainer.load_training_state(checkpoint)
+
     trainer.train()
     
     # Clean up distributed training

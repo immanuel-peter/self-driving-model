@@ -205,6 +205,9 @@ class NuScenesTrainer:
         if self.writer is not None:
             self.writer.add_scalar('val/loss_epoch', avg_loss, epoch)
         
+        # Always save a last checkpoint (full state) for resume
+        self.save_checkpoint(is_best=False)
+
         if avg_loss < self.best_val_loss:
             self.best_val_loss = avg_loss
             if not dist.is_initialized() or dist.get_rank() == 0:
@@ -214,19 +217,31 @@ class NuScenesTrainer:
         return avg_loss
 
     def save_checkpoint(self, is_best=False):
-        if dist.is_initialized():
-            dist.barrier()
-
+        # Create dir on all ranks to avoid race
         ckpt_dir = Path(f"models/checkpoints/nuscenes_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save only on rank 0, but compute model_to_save uniformly
-        model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
-        if is_best and (not dist.is_initialized() or dist.get_rank() == 0):
-            torch.save(model_to_save.state_dict(), ckpt_dir / "best_model.pth")
+        # Save only on rank 0
+        if dist.is_initialized() and dist.get_rank() != 0:
+            return
 
-        if dist.is_initialized():
-            dist.barrier()
+        model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
+
+        # Always save the last full-state checkpoint to resume training
+        last_payload = {
+            'model_state_dict': model_to_save.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'best_val_loss': self.best_val_loss,
+            'config': self.config,
+        }
+        torch.save(last_payload, ckpt_dir / 'last_full.pth')
+
+        if is_best:
+            # Best model weights only (backwards compatible with existing eval script)
+            torch.save(model_to_save.state_dict(), ckpt_dir / 'best_model.pth')
+            # Also save a best full-state checkpoint for resuming from the best
+            torch.save(last_payload, ckpt_dir / 'best_full.pth')
             
     def train(self):
         if not dist.is_initialized() or dist.get_rank() == 0:
@@ -258,6 +273,8 @@ def main():
     parser.add_argument('--cost_giou', type=float, default=2.0, help='GIoU cost for Hungarian matcher')
     parser.add_argument('--bbox_loss_weight', type=float, default=5.0, help='Weight for bbox regression loss')
     parser.add_argument('--num_queries', type=int, default=100, help='Number of object queries for multi-object detection')
+    parser.add_argument('--resume_from', type=str, default='', help='Path to checkpoint to resume from (best_model.pth, last_full.pth, best_full.pth, or state_dict)')
+    parser.add_argument('--resume_mode', type=str, choices=['model','full'], default='model', help='Resume only model weights or full optimizer/scheduler state when a full checkpoint is provided')
     parser.add_argument('--local_rank', type=int, default=0, help='DDP: local GPU index')
     args = parser.parse_args()
 
@@ -321,6 +338,20 @@ def main():
         train_loader = base_train_loader
         val_loader = base_val_loader
     
+    # Optionally resume weights before constructing trainer (supports raw state_dict or full payload)
+    checkpoint = None
+    if args.resume_from:
+        ckpt_path = Path(args.resume_from)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"--resume_from not found: {ckpt_path}")
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            state_dict = checkpoint['model_state_dict']
+        else:
+            state_dict = checkpoint
+        model_to_load = model.module if hasattr(model, 'module') else model
+        model_to_load.load_state_dict(state_dict, strict=True)
+
     # Save config
     if not dist.is_initialized() or dist.get_rank() == 0:
         config_dir = Path(f"models/configs/nuscenes_expert")
@@ -329,6 +360,8 @@ def main():
             json.dump(config, f, indent=2)
 
     trainer = NuScenesTrainer(model, train_loader, val_loader, device, config)
+    if checkpoint is not None and args.resume_mode == 'full' and isinstance(checkpoint, dict):
+        trainer.load_training_state(checkpoint)
     trainer.train()
 
     # Clean up distributed training

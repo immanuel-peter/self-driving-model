@@ -9,9 +9,11 @@ datasets/waymo/raw
 datasets/carla/raw
 datasets/carla/preprocessed
 
-# Ignore checkpoints and runs
+# Ignore checkpoints, runs, and evals
 models/checkpoints/
 models/runs/
+eval/results/
+eval/vis/
 
 # Optional: ignore zip files if still present
 *.zip

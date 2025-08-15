@@ -17,10 +17,12 @@ This approach is designed to be more modular, interpretable, and efficient than 
 
 ## 📊 Current Status
 
-The project is in its early stages, with the foundational data pipelines and initial model training scripts now complete.
+* **✅ Completed**: 
+  - Data collection and preprocessing pipelines for BDD100K, nuScenes, and CARLA have been established. (Waymo and Cosmos datasets are not yet included due to technical issues.)
+  - All expert models have been trained and evaluated on their primary datasets (Stage 2), establishing strong baselines.
 
-* **✅ Completed**: Data collection and preprocessing pipelines for several large-scale autonomous driving datasets, including **BDD100K**, **nuScenes**, and **CARLA**, have been established. (Unfortunately, I was unable to preprocess **Waymo** datasets due to incompatibility of the Waymo Open Dataset package on various Linux machines. I am looking to come back to it, as well as incorporate the Nvidia **Cosmos** Drive Dreams dataset.)
-* **▶️ In Progress**: The training scripts for the BDD100K expert models are fully implemented. This includes a high-performance version utilizing **DistributedDataParallel (DDP)** for efficient multi-GPU training. The immediate next step is to execute these scripts to train the initial set of expert models.
+* **▶️ In Progress**: 
+  - Fine-tuning the pre-trained expert models on CARLA data (Stage 3) to adapt them to the CARLA simulator environment.
 
 -----
 
@@ -30,9 +32,9 @@ This project follows a structured, multi-stage development plan.
 
 - ✅ **Stage 1: Data Collection & Preprocessing**
   - Collect and process all primary datasets (BDD100K, nuScenes, etc.).
-- ▶️ **Stage 2: Expert Training & Evaluation**
+- ✅ **Stage 2: Expert Training & Evaluation**
   - Train and evaluate the expert models on their respective primary datasets to create strong, specialized baseline models.
-- **Stage 3: Fine-Tuning on CARLA Data**
+- ▶️ **Stage 3: Fine-Tuning on CARLA Data**
   - Fine-tune the pre-trained experts on data collected from the CARLA simulator to adapt them to the target environment.
 - **Stage 4: Gating Network Implementation**
   - Design and implement the gating network architecture responsible for combining expert outputs.
@@ -47,60 +49,4 @@ This project follows a structured, multi-stage development plan.
 
 ## ⚙️ Setup and Usage
 
-### 1. Prerequisites
-
-- Git
-- Python 3.9+
-- NVIDIA GPU with CUDA drivers
-
-### 2. Clone Repository
-
-```bash
-git clone https://github.com/immanuel-peter/self-driving-model.git
-cd self-driving-model
-```
-
-### 3. Setup Environment & Dependencies
-
-```bash
-# Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install required packages
-pip install -r requirements.txt
-```
-
-### 4. Download and Preprocess Datasets
-
-Follow the setup instructions detailed in the README files within the `datasets/` directory.
-
-### 5. Train an Expert Model
-
-To train an expert on a multi-GPU machine, use the DDP training script with `torchrun`.
-
-**Example: Training the Detection Expert on 2 GPUs**
-
-```bash
-torchrun --nproc_per_node=2 --standalone \
-    training/train_bdd100k_ddp.py \
-    --task detection \
-    --epochs 50 \
-    --batch_size 64 \
-    --learning_rate 2e-4 \
-    --num_workers 8 \
-    --run_name "detection_a100_run"
-```
-
------
-
-## 📂 Repository Structure
-
-```
-├── dataloaders/    # PyTorch DataLoader implementations for each dataset.
-├── datasets/       # Instructions and scripts for downloading/preprocessing data.
-├── models/         # Neural network architectures for experts and other components.
-├── notebooks/      # Jupyter notebooks for exploration and analysis.
-├── scripts/        # Utility and processing scripts.
-└── training/       # Core training and evaluation loops.
-```
+> Coming soon
