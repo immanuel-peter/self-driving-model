@@ -28,22 +28,27 @@ This approach is designed to be more modular, interpretable, and efficient than 
 
 ## 🗺️ Project Roadmap
 
-This project follows a structured, multi-stage development plan.
+This project follows a structured, multi-stage development plan that separates **perception** (seeing) from **control** (driving).
 
 - ✅ **Stage 1: Data Collection & Preprocessing**
-  - Collect and process all primary datasets (BDD100K, nuScenes, etc.).
+  - Collect and process all primary datasets (BDD100K, nuScenes, CARLA raw data).
 - ✅ **Stage 2: Expert Training & Evaluation**
-  - Train and evaluate the expert models on their respective primary datasets to create strong, specialized baseline models.
-- ▶️ **Stage 3: Fine-Tuning on CARLA Data**
-  - Fine-tune the pre-trained experts on data collected from the CARLA simulator to adapt them to the target environment.
-- **Stage 4: Gating Network Implementation**
-  - Design and implement the gating network architecture responsible for combining expert outputs.
-- **Stage 5: Gating Network Training**
-  - Train the gating network using the outputs from the fine-tuned experts, likely on a validation set or new data from CARLA.
-- **Stage 6: Integrated MoE Simulation**
-  - Run the fully integrated MoE model (experts + gating network) in the CARLA simulator to evaluate end-to-end driving performance.
-- **Stage 7: Joint Fine-Tuning (Optional)**
-  - Explore advanced techniques like Reinforcement Learning or Imitation Learning to jointly fine-tune the gating network and the experts within the simulation.
+  - Train and evaluate the expert models (detection, segmentation, drivable) on their respective primary datasets to create strong, specialized baselines.
+- ▶️ **Stage 3: CARLA Expert Adaptation**
+  - Generate CARLA supervision (pseudo-labels from BDD experts or GT from CARLA sensors).
+  - Fine-tune experts on CARLA to reduce domain gap and produce clean outputs in the simulator environment.
+- **Stage 4: Policy Head Development**
+  - Train a CARLA-specific control module (BC, IL, or RL) to turn perception outputs into `{steer, throttle, brake}` commands.
+- **Stage 5: Gating Network Implementation**
+  - Design and implement the gating network architecture responsible for combining expert outputs before the policy head.
+- **Stage 6: Gating Network Training**
+  - Train the gating network on CARLA-adapted expert outputs to improve expert routing in the target domain.
+- **Stage 7: Integrated MoE + Policy Simulation**
+  - Wire perception experts, gating network, and control module into CARLA’s synchronous simulation loop.
+  - Evaluate closed-loop driving performance (route completion, infractions/km, jerk).
+- **Stage 8: Joint Fine-Tuning (Optional)**
+  - Use DAgger, RL, or IL to jointly fine-tune perception, gating, and control in-sim for robustness.
+
 
 -----
 
