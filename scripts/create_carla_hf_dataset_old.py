@@ -11,8 +11,7 @@ import logging
 from tqdm import tqdm
 import random
 
-from datasets import Dataset, Features, Value, Image as HFImage, Sequence, DatasetDict
-import numpy as np
+from datasets import Dataset, Features, Value, Image as HFImage, DatasetDict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -74,51 +73,11 @@ def process_run(run_dir: Path, run_id: str) -> List[Dict[str, Any]]:
     processed_data = []
     for frame_data in tqdm(vehicle_data, desc=f"Processing {run_id}"):
         image_paths = collect_image_paths(images_dir, frame_data, cameras)
-        # Derived file stems and auxiliary modalities (front camera convention)
-        image_filename = frame_data["image_filename"]
-        stem = Path(image_filename).stem
-        seg_front_path = run_dir / "segmentation" / "front" / image_filename
-        lidar_path = run_dir / "lidar" / f"{stem}.npy"
-        ann_path = run_dir / "annots" / "front" / f"{stem}.json"
-
-        # Parse 2D boxes (if available)
-        boxes = []
-        box_labels = []
-        if ann_path.exists():
-            try:
-                with open(ann_path, 'r') as f:
-                    ann = json.load(f)
-                for obj in ann.get('boxes', []):
-                    bbox = obj.get('bbox')
-                    label = obj.get('label', 'vehicle')
-                    if bbox and len(bbox) == 4:
-                        boxes.append([float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])])
-                        box_labels.append(str(label))
-            except Exception as e:
-                logger.warning(f"Failed to parse {ann_path}: {e}")
-
-        # Load LiDAR points into-memory (Nx4: x,y,z,intensity). Store as nested lists.
-        lidar_points = []
-        if lidar_path.exists():
-            try:
-                pts = np.load(lidar_path)
-                if pts.ndim == 2 and pts.shape[1] >= 3:
-                    # Ensure float32 lists for Arrow serialization
-                    lidar_points = pts[:, :4] if pts.shape[1] >= 4 else np.pad(pts[:, :3], ((0,0),(0,1)), constant_values=0.0)
-                    lidar_points = lidar_points.astype(np.float32).tolist()
-            except Exception as e:
-                logger.warning(f"Failed to load LiDAR {lidar_path}: {e}")
-
         sample = {
             "run_id": run_id,
             "frame": frame_data["frame"],
             "timestamp": frame_data["timestamp"],
             **image_paths,
-            # Optional modalities
-            "seg_front": str(seg_front_path) if seg_front_path.exists() else None,
-            "lidar": lidar_points,
-            "boxes": boxes,
-            "box_labels": box_labels,
             "location_x": frame_data["location"]["x"],
             "location_y": frame_data["location"]["y"],
             "location_z": frame_data["location"]["z"],
@@ -181,11 +140,6 @@ def create_dataset_features(example_samples: List[Dict[str, Any]]) -> Features:
         "vehicles_spawned": Value("int32"),
         "walkers_spawned": Value("int32"),
         "duration_seconds": Value("int32"),
-        # Optional modalities
-        "seg_front": HFImage(),
-        "lidar": Sequence(Sequence(Value("float32"))),
-        "boxes": Sequence(Sequence(Value("float32"))),
-        "box_labels": Sequence(Value("string")),
     }
     
     # Add image fields dynamically
@@ -199,7 +153,7 @@ def main():
     parser = argparse.ArgumentParser(description="Convert CARLA dataset to HuggingFace format")
     parser.add_argument("--raw_dir", type=str, default="datasets/carla/raw",
                        help="Path to raw CARLA dataset directory")
-    parser.add_argument("--dataset_name", type=str, default="more-carla-autopilot-images",
+    parser.add_argument("--dataset_name", type=str, default="carla-autopilot-images",
                        help="Name for the HuggingFace dataset")
     parser.add_argument("--push_to_hub", action="store_true",
                        help="Push dataset to HuggingFace Hub")
