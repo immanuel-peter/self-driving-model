@@ -77,7 +77,10 @@ def process_run(run_dir: Path, run_id: str) -> List[Dict[str, Any]]:
         # Derived file stems and auxiliary modalities (front camera convention)
         image_filename = frame_data["image_filename"]
         stem = Path(image_filename).stem
-        seg_front_path = run_dir / "segmentation" / "front" / image_filename
+        # Prefer colorized visualization for segmentation masks
+        seg_front_vis = run_dir / "segmentation_vis" / "front" / image_filename
+        seg_front_raw = run_dir / "segmentation" / "front" / image_filename
+        seg_front_path = seg_front_vis if seg_front_vis.exists() else seg_front_raw
         lidar_path = run_dir / "lidar" / f"{stem}.npy"
         ann_path = run_dir / "annots" / "front" / f"{stem}.json"
 
@@ -199,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description="Convert CARLA dataset to HuggingFace format")
     parser.add_argument("--raw_dir", type=str, default="datasets/carla/raw",
                        help="Path to raw CARLA dataset directory")
-    parser.add_argument("--dataset_name", type=str, default="more-carla-autopilot-images",
+    parser.add_argument("--dataset_name", type=str, default="carla-autopilot-images-v2",
                        help="Name for the HuggingFace dataset")
     parser.add_argument("--push_to_hub", action="store_true",
                        help="Push dataset to HuggingFace Hub")

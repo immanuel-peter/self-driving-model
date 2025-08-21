@@ -3,7 +3,6 @@ import numpy as np
 import math
 import queue
 from tqdm import tqdm
-import os
 
 # --- CONFIGURATION ---
 NUM_RUNS = 3
@@ -13,9 +12,8 @@ IMG_HEIGHT = 600
 NUM_NPC_VEHICLES = 50
 NUM_NPC_WALKERS = 30
 SAVE_EVERY_N = 5        # Save every N-th frame (for all cameras)
-OUTPUT_ROOT = os.path.join(
-    os.environ.get("CARLA_DATA_PATH", os.path.expanduser("~")), "automoe_training"
-)
+OUTPUT_ROOT = os.environ.get("CARLA_DATA_PATH", os.path.expanduser("~/self-driving-model/datasets/carla/raw"))
+WARMUP_TICKS = 5        # Number of ticks to warm up sensors before recording
 
 CAMERA_CONFIGS = [
     ("front",       carla.Transform(carla.Location(x=1.5, z=2.4))),
@@ -65,8 +63,9 @@ def world_to_camera_matrix(sensor):
     M[:3, 3] = t_cw
     return M
 
-def project_point(K, p_cam):
-    x, y, z = p_cam[0], p_cam[1], p_cam[2]
+def project_point(K, p_cam_std):
+    # p_cam_std follows the standard pinhole convention: x right, y down, z forward
+    x, y, z = p_cam_std[0], p_cam_std[1], p_cam_std[2]
     if z <= 0.01:
         return None
     u = (K[0, 0] * x) / z + K[0, 2]
@@ -84,8 +83,11 @@ def compute_2d_bbox_for_actor(actor, K, world_to_cam, width, height):
     pts_img = []
     for v in verts:
         pw = np.array([v.x, v.y, v.z, 1.0], dtype=np.float32)
-        pc = world_to_cam @ pw
-        pt = project_point(K, pc[:3])
+        pc = world_to_cam @ pw  # Unreal camera coords: X forward, Y right, Z up
+        Xf, Yr, Zu = pc[0], pc[1], pc[2]
+        # Convert to standard pinhole: x right, y down, z forward
+        p_cam_std = np.array([Yr, -Zu, Xf], dtype=np.float32)
+        pt = project_point(K, p_cam_std)
         if pt is not None:
             pts_img.append(pt)
     if len(pts_img) == 0:
@@ -169,7 +171,40 @@ def main():
     weather_presets = find_weather_presets()
     world = client.get_world()
     blueprint_library = world.get_blueprint_library()
-    vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
+    # Choose ego vehicle blueprint with robust fallback list tailored for CARLA 0.10.0
+    vehicle_bp = None
+    try:
+        vehicle_bp = blueprint_library.find('vehicle.tesla.model3')  # newer builds
+    except Exception:
+        vehicle_bp = None
+    # CARLA 0.10.0 canonical vehicle IDs
+    preferred_ids = [
+        'vehicle.lincoln.mkz',
+        'vehicle.ue4.audi.tt',
+        'vehicle.ue4.bmw.grantourer',
+        'vehicle.ue4.ford.mustang',
+        'vehicle.mini.cooper',
+        'vehicle.nissan.patrol',
+        'vehicle.ue4.mercedes.ccc',
+        'vehicle.ue4.chevrolet.impala',
+        'vehicle.dodge.charger',
+        'vehicle.dodgecop.charger',
+        'vehicle.taxi.ford',
+    ]
+    if vehicle_bp is None:
+        for vid in preferred_ids:
+            try:
+                vehicle_bp = blueprint_library.find(vid)
+                if vehicle_bp is not None:
+                    break
+            except Exception:
+                vehicle_bp = None
+                continue
+    if vehicle_bp is None:
+        candidates = blueprint_library.filter('vehicle.*')
+        vehicle_bp = candidates[0] if candidates else None
+    if vehicle_bp is None:
+        raise RuntimeError('No vehicle blueprints available in this CARLA build')
     vehicle_bp.set_attribute('role_name', 'ego')
 
     for run_i in range(start_run, start_run + num_runs):
@@ -288,6 +323,15 @@ def main():
         print(f"[{run_id}] Traffic: {len(npc_vehicles)} vehicles, {len(npc_walkers)} pedestrians")
         print(f"[{run_id}] All cameras + seg + LiDAR enabled (saving every {save_every_n} frames, **synchronized**).")
 
+        # --- Sensor warm-up ticks ---
+        for _ in range(WARMUP_TICKS):
+            world.tick()
+            # Drain queues during warm-up to ensure fresh frames after warm-up
+            for cam_name in cameras.keys():
+                _ = get_latest_from_queue(sensor_queues[cam_name])
+            _ = get_latest_from_queue(seg_queue)
+            _ = get_latest_from_queue(lidar_queue)
+
         # Precompute front camera intrinsics (assumes fov=90)
         cam_fov = 90
         K_front = build_camera_intrinsic(IMG_WIDTH, IMG_HEIGHT, cam_fov)
@@ -318,6 +362,11 @@ def main():
                 if latest_seg is not None:
                     seg_path = os.path.join(run_dir, "segmentation", "front", fname)
                     latest_seg.save_to_disk(seg_path, carla.ColorConverter.Raw)
+                    # Also save a colorized visualization for quick inspection
+                    seg_vis_dir = os.path.join(run_dir, "segmentation_vis", "front")
+                    os.makedirs(seg_vis_dir, mode=0o755, exist_ok=True)
+                    seg_vis_path = os.path.join(seg_vis_dir, fname)
+                    latest_seg.save_to_disk(seg_vis_path, carla.ColorConverter.CityScapesPalette)
                 else:
                     print(f"⚠️ [{run_id}] Warning: No semantic seg at tick {tick}")
 
