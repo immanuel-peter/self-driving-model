@@ -1,6 +1,8 @@
 import json
 import torch
 import argparse
+import math
+import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 from PIL import Image
@@ -52,6 +54,7 @@ def process_frame(run_dir, frame_id, frame_data, config, transform):
     # Load images from all cameras
     images = {}
     image_filename = frame_data['image_filename']
+    stem = Path(image_filename).stem
     
     for cam_name in CAMERA_CONFIGS:
         img_path = run_dir / "images" / cam_name / image_filename
@@ -79,10 +82,94 @@ def process_frame(run_dir, frame_id, frame_data, config, transform):
     # Weather information
     weather_features = parse_weather_info(config['weather'])
     
+    # Optional: semantic segmentation mask (front)
+    mask_tensor = None
+    seg_path = run_dir / "segmentation" / "front" / image_filename
+    if seg_path.exists():
+        try:
+            # Raw IDs saved by ColorConverter.Raw (single-channel)
+            mask_img = Image.open(seg_path)
+            mask_img = mask_img.resize((256, 256), resample=Image.NEAREST)
+            mask_np = np.array(mask_img).astype(np.int64)
+            mask_tensor = torch.from_numpy(mask_np)
+        except Exception as e:
+            print(f"Warning: Failed to load segmentation {seg_path}: {e}")
+            mask_tensor = None
+    
+    # Optional: detection annotations (front)
+    bboxes_tensor = None
+    labels_tensor = None
+    ann_path = run_dir / "annots" / "front" / f"{stem}.json"
+    if ann_path.exists():
+        try:
+            with open(ann_path, 'r') as f:
+                ann = json.load(f)
+            boxes = []
+            labels = []
+            # Map categories to integers (extend as needed)
+            cls_map = {
+                'vehicle': 0,
+                'pedestrian': 1,
+            }
+            # Scale boxes from raw (IMG_WIDTH x IMG_HEIGHT) -> (256 x 256)
+            raw_w, raw_h = 800, 600
+            sx, sy = 256.0 / raw_w, 256.0 / raw_h
+            for obj in ann.get('boxes', []):
+                bbox = obj.get('bbox')
+                label_str = obj.get('label', 'vehicle')
+                if not bbox or label_str not in cls_map:
+                    continue
+                x1, y1, x2, y2 = bbox
+                boxes.append([x1 * sx, y1 * sy, x2 * sx, y2 * sy])
+                labels.append(cls_map[label_str])
+            if len(boxes) > 0:
+                bboxes_tensor = torch.tensor(boxes, dtype=torch.float32)
+                labels_tensor = torch.tensor(labels, dtype=torch.int64)
+            else:
+                bboxes_tensor = torch.zeros((0, 4), dtype=torch.float32)
+                labels_tensor = torch.zeros((0,), dtype=torch.int64)
+        except Exception as e:
+            print(f"Warning: Failed to load annots {ann_path}: {e}")
+            bboxes_tensor = None
+            labels_tensor = None
+    
+    # Optional: LiDAR point cloud
+    lidar_tensor = None
+    lidar_path = run_dir / "lidar" / f"{stem}.npy"
+    if lidar_path.exists():
+        try:
+            pts = np.load(lidar_path)  # Nx4 (x,y,z,intensity)
+            if pts.ndim == 2 and pts.shape[1] >= 3:
+                lidar_tensor = torch.from_numpy(pts[:, :3].astype(np.float32))
+        except Exception as e:
+            print(f"Warning: Failed to load LiDAR {lidar_path}: {e}")
+            lidar_tensor = None
+    
+    # Camera intrinsics (adjusted to resized 256x256)
+    def build_camera_intrinsic(width, height, fov_deg):
+        f = width / (2.0 * math.tan(math.radians(fov_deg) / 2.0))
+        K = torch.tensor([
+            [f, 0.0, width / 2.0],
+            [0.0, f, height / 2.0],
+            [0.0, 0.0, 1.0]
+        ], dtype=torch.float32)
+        return K
+    # Raw K for 800x600 with fov=90, then scale to 256x256
+    K_raw = build_camera_intrinsic(800, 600, 90)
+    sx, sy = 256.0 / 800.0, 256.0 / 600.0
+    S = torch.tensor([[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]], dtype=torch.float32)
+    K_resized = S @ K_raw
+    
     # Create the sample structure compatible with MoE experts
     sample = {
         # Front camera image
         'image': images['front'],
+        # Optional label artifacts for multiple experts
+        'mask': mask_tensor if mask_tensor is not None else None,
+        'bboxes': bboxes_tensor if bboxes_tensor is not None else None,
+        'labels': labels_tensor if labels_tensor is not None else None,
+        'lidar': lidar_tensor if lidar_tensor is not None else None,
+        'intrinsics': K_resized,
         
         # Vehicle state (similar to control data in other datasets)
         'vehicle_state': {
@@ -115,7 +202,11 @@ def process_frame(run_dir, frame_id, frame_data, config, transform):
             'timestamp': frame_data['timestamp'],
             'run_id': config['run_id'],
             'map': config['map'],
-            'camera': 'front'
+            'camera': 'front',
+            'image_path': str(run_dir / 'images' / 'front' / image_filename),
+            'seg_path': str(seg_path) if seg_path.exists() else '',
+            'lidar_path': str(lidar_path) if lidar_path.exists() else '',
+            'ann_path': str(ann_path) if ann_path.exists() else ''
         }
     }
     

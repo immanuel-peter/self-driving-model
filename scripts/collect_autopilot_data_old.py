@@ -1,6 +1,5 @@
 import carla, random, time, os, json, argparse
 import numpy as np
-import math
 import queue
 from tqdm import tqdm
 import os
@@ -23,81 +22,6 @@ CAMERA_CONFIGS = [
     ("front_right", carla.Transform(carla.Location(x=1.2, y= 0.5, z=2.2), carla.Rotation(yaw=45))),
     ("rear",        carla.Transform(carla.Location(x=-1.5, z=2.4), carla.Rotation(yaw=180))),
 ]
-
-# --- HELPERS: camera intrinsics/projection and 2D boxes ---
-def build_camera_intrinsic(width, height, fov_deg):
-    f = width / (2.0 * math.tan(math.radians(fov_deg) / 2.0))
-    K = np.array([
-        [f, 0.0, width / 2.0],
-        [0.0, f, height / 2.0],
-        [0.0, 0.0, 1.0]
-    ], dtype=np.float32)
-    return K
-
-def rotation_matrix_from_carla(rot):
-    pitch = math.radians(rot.pitch)
-    yaw   = math.radians(rot.yaw)
-    roll  = math.radians(rot.roll)
-    c_y, s_y = math.cos(yaw), math.sin(yaw)
-    c_p, s_p = math.cos(pitch), math.sin(pitch)
-    c_r, s_r = math.cos(roll), math.sin(roll)
-    # Yaw(Z) * Pitch(Y) * Roll(X)
-    R_yaw = np.array([[ c_y, -s_y, 0],
-                      [ s_y,  c_y, 0],
-                      [  0 ,   0 , 1]], dtype=np.float32)
-    R_pitch = np.array([[ c_p, 0, s_p],
-                        [  0 , 1,  0 ],
-                        [-s_p, 0, c_p]], dtype=np.float32)
-    R_roll = np.array([[1,  0 ,  0 ],
-                       [0, c_r, -s_r],
-                       [0, s_r,  c_r]], dtype=np.float32)
-    R = R_yaw @ R_pitch @ R_roll
-    return R
-
-def world_to_camera_matrix(sensor):
-    tf = sensor.get_transform()
-    R_wc = rotation_matrix_from_carla(tf.rotation)
-    t_wc = np.array([tf.location.x, tf.location.y, tf.location.z], dtype=np.float32)
-    R_cw = R_wc.T
-    t_cw = -R_cw @ t_wc
-    M = np.eye(4, dtype=np.float32)
-    M[:3, :3] = R_cw
-    M[:3, 3] = t_cw
-    return M
-
-def project_point(K, p_cam):
-    x, y, z = p_cam[0], p_cam[1], p_cam[2]
-    if z <= 0.01:
-        return None
-    u = (K[0, 0] * x) / z + K[0, 2]
-    v = (K[1, 1] * y) / z + K[1, 2]
-    return np.array([u, v], dtype=np.float32)
-
-def compute_2d_bbox_for_actor(actor, K, world_to_cam, width, height):
-    try:
-        bb = actor.bounding_box
-        verts = bb.get_world_vertices(actor.get_transform())
-    except Exception:
-        return None
-    if not verts:
-        return None
-    pts_img = []
-    for v in verts:
-        pw = np.array([v.x, v.y, v.z, 1.0], dtype=np.float32)
-        pc = world_to_cam @ pw
-        pt = project_point(K, pc[:3])
-        if pt is not None:
-            pts_img.append(pt)
-    if len(pts_img) == 0:
-        return None
-    pts_img = np.stack(pts_img, axis=0)
-    xmin = float(np.clip(pts_img[:, 0].min(), 0, width - 1))
-    ymin = float(np.clip(pts_img[:, 1].min(), 0, height - 1))
-    xmax = float(np.clip(pts_img[:, 0].max(), 0, width - 1))
-    ymax = float(np.clip(pts_img[:, 1].max(), 0, height - 1))
-    if xmax <= xmin or ymax <= ymin:
-        return None
-    return [xmin, ymin, xmax, ymax]
 
 def find_weather_presets():
     return [getattr(carla.WeatherParameters, name) for name in dir(carla.WeatherParameters)
@@ -177,10 +101,6 @@ def main():
         run_dir = os.path.join(output_root, run_id)
         for cam_name, _ in CAMERA_CONFIGS:
             os.makedirs(os.path.join(run_dir, "images", cam_name), mode=0o755, exist_ok=True)
-        # Additional outputs
-        os.makedirs(os.path.join(run_dir, "segmentation", "front"), mode=0o755, exist_ok=True)
-        os.makedirs(os.path.join(run_dir, "lidar"), mode=0o755, exist_ok=True)
-        os.makedirs(os.path.join(run_dir, "annots", "front"), mode=0o755, exist_ok=True)
 
         # -- Weather and NPCs --
         weather = random.choice(weather_presets)
@@ -232,10 +152,8 @@ def main():
                 except Exception:
                     continue
 
-        # --- Synchronous Sensor Queues for Each modality ---
+        # --- Synchronous Sensor Queues for Each Camera ---
         sensor_queues = {cam_name: queue.Queue() for cam_name in dict(CAMERA_CONFIGS).keys()}
-        seg_queue = queue.Queue()
-        lidar_queue = queue.Queue()
 
         # -- Set up all cameras and register their queues --
         cameras = {}
@@ -246,24 +164,8 @@ def main():
             camera_bp.set_attribute('fov', '90')
             cam_actor = world.spawn_actor(camera_bp, cam_tf, attach_to=vehicle)
             cameras[cam_name] = cam_actor
+            # Each camera puts its data in its respective queue
             cam_actor.listen(sensor_queues[cam_name].put)
-
-        # -- Semantic segmentation camera (front only) --
-        seg_bp = blueprint_library.find('sensor.camera.semantic_segmentation')
-        seg_bp.set_attribute('image_size_x', str(IMG_WIDTH))
-        seg_bp.set_attribute('image_size_y', str(IMG_HEIGHT))
-        seg_bp.set_attribute('fov', '90')
-        seg_sensor = world.spawn_actor(seg_bp, dict(CAMERA_CONFIGS)["front"], attach_to=vehicle)
-        seg_sensor.listen(seg_queue.put)
-
-        # -- LiDAR sensor --
-        lidar_bp = blueprint_library.find('sensor.lidar.ray_cast')
-        lidar_bp.set_attribute('range', '80')
-        lidar_bp.set_attribute('rotation_frequency', '20')
-        lidar_bp.set_attribute('channels', '32')
-        lidar_bp.set_attribute('points_per_second', '200000')
-        lidar_sensor = world.spawn_actor(lidar_bp, carla.Transform(carla.Location(x=0, z=2.5)), attach_to=vehicle)
-        lidar_sensor.listen(lidar_queue.put)
 
         # -- Set up collision sensor --
         collision_bp = blueprint_library.find('sensor.other.collision')
@@ -286,11 +188,7 @@ def main():
 
         print(f"[{run_id}] Started: map {world.get_map().name}, weather {weather}")
         print(f"[{run_id}] Traffic: {len(npc_vehicles)} vehicles, {len(npc_walkers)} pedestrians")
-        print(f"[{run_id}] All cameras + seg + LiDAR enabled (saving every {save_every_n} frames, **synchronized**).")
-
-        # Precompute front camera intrinsics (assumes fov=90)
-        cam_fov = 90
-        K_front = build_camera_intrinsic(IMG_WIDTH, IMG_HEIGHT, cam_fov)
+        print(f"[{run_id}] All cameras enabled (saving every {save_every_n} frames, **synchronized**).")
 
         # --- Tick the simulator and synchronously save all camera images every N ticks ---
         num_ticks = int(run_duration / 0.05)
@@ -301,8 +199,6 @@ def main():
             latest_imgs = {}
             for cam_name in cameras.keys():
                 latest_imgs[cam_name] = get_latest_from_queue(sensor_queues[cam_name])
-            latest_seg = get_latest_from_queue(seg_queue)
-            latest_lidar = get_latest_from_queue(lidar_queue)
 
             if tick % save_every_n == 0:
                 frame_id = tick  # For consistency, use tick as frame_id
@@ -313,21 +209,6 @@ def main():
                         img.save_to_disk(img_path)
                     else:
                         print(f"⚠️ [{run_id}] Warning: No image from {cam_name} at tick {tick}")
-
-                # Save semantic segmentation (raw IDs) for front
-                if latest_seg is not None:
-                    seg_path = os.path.join(run_dir, "segmentation", "front", fname)
-                    latest_seg.save_to_disk(seg_path, carla.ColorConverter.Raw)
-                else:
-                    print(f"⚠️ [{run_id}] Warning: No semantic seg at tick {tick}")
-
-                # Save LiDAR point cloud (.npy with Nx4: x,y,z,intensity)
-                if latest_lidar is not None:
-                    pts = np.frombuffer(latest_lidar.raw_data, dtype=np.float32)
-                    pts = np.reshape(pts, (int(pts.shape[0] / 4), 4))
-                    np.save(os.path.join(run_dir, "lidar", f"{frame_id:06d}.npy"), pts)
-                else:
-                    print(f"⚠️ [{run_id}] Warning: No LiDAR at tick {tick}")
 
                 # Save metadata (using front camera image timestamp for simplicity)
                 tf = vehicle.get_transform()
@@ -352,36 +233,11 @@ def main():
                 }
                 frame_data.append(frame_info)
 
-                # Compute and save 2D bounding boxes for vehicles/pedestrians w.r.t front camera
-                try:
-                    world_to_cam = world_to_camera_matrix(cameras["front"])
-                    actors = world.get_actors()
-                    vehs = actors.filter('vehicle.*')
-                    peds = actors.filter('walker.pedestrian.*')
-                    annotations = []
-                    for a in list(vehs) + list(peds):
-                        bbox = compute_2d_bbox_for_actor(a, K_front, world_to_cam, IMG_WIDTH, IMG_HEIGHT)
-                        if bbox is None:
-                            continue
-                        label = 'pedestrian' if 'walker.pedestrian' in a.type_id else 'vehicle'
-                        annotations.append({
-                            'bbox': bbox,
-                            'label': label,
-                            'actor_id': a.id,
-                            'type_id': a.type_id
-                        })
-                    with open(os.path.join(run_dir, "annots", "front", f"{frame_id:06d}.json"), 'w') as f:
-                        json.dump({'frame': frame_id, 'boxes': annotations}, f)
-                except Exception as e:
-                    print(f"⚠️ [{run_id}] BBox annotate failed at tick {tick}: {e}")
-
         # --- Cleanup (batch destroy for all) ---
         for cam in cameras.values():
             cam.stop()
-        seg_sensor.stop()
-        lidar_sensor.stop()
         collision_sensor.stop()
-        actors_to_destroy = [vehicle, collision_sensor, seg_sensor, lidar_sensor] + list(cameras.values()) + npc_vehicles + npc_walkers
+        actors_to_destroy = [vehicle, collision_sensor] + list(cameras.values()) + npc_vehicles + npc_walkers
         batch_destroy(client, actors_to_destroy)
 
         # --- Save logs ---
