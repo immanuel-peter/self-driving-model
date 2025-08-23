@@ -19,7 +19,7 @@ You can **clone the raw CARLA dataset with the original folder structure fully p
 
 ```bash
 git lfs install
-git clone https://huggingface.co/datasets/immanuelpeter/carla-autopilot-images datasets/carla/raw
+git clone https://huggingface.co/datasets/immanuelpeter/carla-autopilot-multimodal-dataset datasets/carla/raw
 ````
 
 This will populate the following structure:
@@ -38,15 +38,55 @@ datasets/carla/raw/
 
 This guide will walk you through generating and preprocessing a CARLA autopilot dataset.
 
-> 📝 **Note:** This workflow is tested on Linux (Ubuntu) with CARLA ≥ 0.9.14.
+> 📝 **Note:** This workflow is tested on Linux (Ubuntu) with CARLA = 0.10.0.
+
+
+### Step 0: Download CARLA 0.10.0
+
+Download the Ubuntu 22 release from [https://github.com/carla-simulator/carla/releases](https://github.com/carla-simulator/carla/releases).
+
+After downloading it to your local machine, move it to your remote machine.
+
+```bash
+rsync -avz /path/to/local/CARLA_0.10.0.tar.gz user@remote_ip:/path/to/carla-simulator/
+```
+  
+ In the remote machine, unzip the CARLA file.
+
+```bash
+cd /path/to/carla-simulator
+tar -xvzf CARLA_0.10.0.tar.gz -C .
+```
+
+Make sure to install necessary dependencies on the machine as well.
+
+```bash
+pip install --user pygame numpy
+```
+
+In `~/.bashrc` and `requirements.txt`, add the following:
+
+```bash
+# ~/.bashrc
+export CARLA_ROOT=/path/to/carla-simulator
+
+# requirements.txt
+/path/to/carla-simulator/PythonAPI/carla/dist/carla-0.10.0-cp310-cp310-linux_x86_64.whl
+```
+
+Finally, install CARLA in the project.
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
 ### Step 1: Start the CARLA Simulator
 
 Make the launch script executable and run it. (You can override the storage path by setting `CARLA_DATA_PATH`.)
 
 ```bash
-chmod +x scripts/start_carla.sh
-scripts/start_carla.sh
+bash scripts/start_carla.sh
 ````
 
 To verify the server is up, run:
@@ -61,8 +101,7 @@ Data is collected by running the robust autopilot collection script.
 You can automate multiple collection runs using `scripts/run_carla_scripts.sh` or customize your own commands.
 
 ```bash
-chmod +x scripts/run_carla_scripts.sh
-scripts/run_carla_scripts.sh
+bash scripts/run_carla_scripts.sh
 ```
 
 You can also run `collect_autopilot_data.py` directly for fine-grained control:
@@ -95,13 +134,20 @@ datasets/carla/preprocessed/
 datasets/carla/
 ├── raw/
 │   ├── run_001/
+│   │   ├── annots/
+│   │   │   └── front/
 │   │   ├── images/
 │   │   │   ├── front/
 │   │   │   ├── front_left/
 │   │   │   ├── front_right/
 │   │   │   └── rear/
-│   │   ├── config.json
+│   │   ├── lidar/
+│   │   ├── segmentation/
+│   │   │   └── front/
+│   │   ├── segmentation_vis/
+│   │   │   └── front/
 │   │   ├── collisions.json
+│   │   ├── config.json
 │   │   └── vehicle_log.json
 │   ├── run_002/
 │   └── ...
