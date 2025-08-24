@@ -42,7 +42,7 @@ class BDDTrainer:
         # --- Loss Functions ---
         if self.task == 'detection':
             self.class_loss_fn = nn.CrossEntropyLoss(ignore_index=self.model.num_classes)
-            self.bbox_loss_fn = nn.SmoothL1Loss(reduction='sum')
+            self.bbox_loss_fn = nn.SmoothL1Loss(reduction='mean')
             self.matcher = HungarianMatcher(
                 cost_class=self.config.get('cost_class', 1.0),
                 cost_bbox=self.config.get('cost_bbox', 5.0),

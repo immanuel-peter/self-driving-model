@@ -1,0 +1,11 @@
+{
+  "data_root": "/ephemeral/datasets/carla/preprocessed",
+  "epochs": 25,
+  "batch_size": 32,
+  "num_workers": 12,
+  "horizon": 8,
+  "lr": 0.0003,
+  "no_context": false,
+  "run_name": "carla_policy_ddp",
+  "ckpt_dir": "models/checkpoints/carla_policy"
+}
