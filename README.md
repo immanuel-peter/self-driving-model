@@ -34,12 +34,12 @@ This project follows a structured, multi-stage development plan that separates *
   - Collect and process all primary datasets (BDD100K, nuScenes, CARLA raw data).
 - ✅ **Stage 2: Expert Training & Evaluation**
   - Train and evaluate the expert models (detection, segmentation, drivable) on their respective primary datasets to create strong, specialized baselines.
-- ▶️ **Stage 3: CARLA Expert Adaptation**
+- ✅ **Stage 3: CARLA Expert Adaptation**
   - Generate CARLA supervision (pseudo-labels from BDD experts or GT from CARLA sensors).
   - Fine-tune experts on CARLA to reduce domain gap and produce clean outputs in the simulator environment.
-- **Stage 4: Policy Head Development**
+- ✅ **Stage 4: Policy Head Development**
   - Train a CARLA-specific control module (BC, IL, or RL) to turn perception outputs into `{steer, throttle, brake}` commands.
-- **Stage 5: Gating Network Implementation**
+- ▶️ **Stage 5: Gating Network Implementation**
   - Design and implement the gating network architecture responsible for combining expert outputs before the policy head.
 - **Stage 6: Gating Network Training**
   - Train the gating network on CARLA-adapted expert outputs to improve expert routing in the target domain.

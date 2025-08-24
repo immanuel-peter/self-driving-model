@@ -1,0 +1,14 @@
+{
+  "task": "detection",
+  "data_root": "/ephemeral/datasets/carla/preprocessed",
+  "epochs": 20,
+  "batch_size": 16,
+  "num_workers": 8,
+  "learning_rate": 0.0002,
+  "weight_decay": 1e-05,
+  "bbox_loss_weight": 1.0,
+  "cost_class": 1.0,
+  "cost_bbox": 5.0,
+  "cost_giou": 2.0,
+  "run_name": "carla_det_ft_ddp"
+}

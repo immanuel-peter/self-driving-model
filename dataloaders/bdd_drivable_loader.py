@@ -1,10 +1,10 @@
 from pathlib import Path
+import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_image
 
-# Config
-BASE_DIR = 'datasets/bdd100k/preprocessed/drivable'
+BASE_DIR = os.environ.get('BDD100K_DRIVABLE_DIR', 'datasets/bdd100k/preprocessed/drivable')
 BATCH_SIZE = 32
 NUM_WORKERS = 4
 
@@ -17,9 +17,14 @@ class BDD100KDrivableDataset(Dataset):
         return len(self.pt_files)
 
     def __getitem__(self, idx):
-        sample = torch.load(self.pt_files[idx])
+        sample = torch.load(self.pt_files[idx], weights_only=False)
         image = read_image(sample["image_path"]).float() / 255.0
-        mask = read_image(sample["mask_path"]).squeeze(0).long()  # shape: [H, W]
+        mask_t = read_image(sample["mask_path"]).long()  # [C,H,W]
+        # Robust channel handling: accept 1- or 3-channel masks; reduce to single channel
+        if mask_t.dim() == 3 and mask_t.shape[0] > 1:
+            mask = mask_t[0]  # take first channel
+        else:
+            mask = mask_t.squeeze(0)
 
         if self.transform:
             image = self.transform(image)
@@ -30,7 +35,7 @@ class BDD100KDrivableDataset(Dataset):
         }
 
 def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None, 
-                           shuffle=None, transform=None):
+                           shuffle=None, transform=None, base_dir: str | None = None):
     """
     Factory function to create BDD100K drivable area data loaders.
     
@@ -50,7 +55,8 @@ def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None,
         shuffle = (split == 'train')
     
     # Build path
-    split_dir = Path(BASE_DIR) / split
+    root = Path(base_dir) if base_dir is not None else Path(BASE_DIR)
+    split_dir = root / split
     if not split_dir.exists():
         raise FileNotFoundError(f"Split directory not found: {split_dir}")
     
