@@ -20,9 +20,11 @@ This approach is designed to be more modular, interpretable, and efficient than 
 * **✅ Completed**: 
   - Data collection and preprocessing pipelines for BDD100K, nuScenes, and CARLA have been established. (Waymo and Cosmos datasets are not yet included due to technical issues.)
   - All expert models have been trained and evaluated on their primary datasets (Stage 2), establishing strong baselines.
+  - Fine-tuning the pre-trained expert models on CARLA data (Stage 3) to adapt them to the CARLA simulator environment.
 
 * **▶️ In Progress**: 
-  - Fine-tuning the pre-trained expert models on CARLA data (Stage 3) to adapt them to the CARLA simulator environment.
+  - Gating network implementation and training infrastructure (Stages 5-6).
+  - Integrated MoE + Policy simulation testing (Stage 7).
 
 -----
 

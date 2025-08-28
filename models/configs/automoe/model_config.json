@@ -1,0 +1,47 @@
+{
+  "experts": [
+    {
+      "type": "detection",
+      "num_classes": 10,
+      "output_dim": 256,
+      "pretrained_backbone": true
+    },
+    {
+      "type": "segmentation",
+      "num_classes": 19,
+      "output_dim": 256,
+      "pretrained_backbone": true
+    },
+    {
+      "type": "drivable",
+      "num_classes": 3,
+      "output_dim": 256,
+      "pretrained_backbone": true
+    },
+    {
+      "type": "nuscenes",
+      "num_queries": 196,
+      "num_classes": 10,
+      "output_dim": 256,
+      "fusion": "sum",
+      "use_lidar": false,
+      "use_tnet": false,
+      "bbox_dim": 4
+    }
+  ],
+  "gating": {
+    "processed_dim": 256,
+    "hidden_dim": 128,
+    "temperature": 1.0,
+    "use_softmax": true
+  },
+  "context": {
+    "type": "simple",
+    "context_dim": 64
+  },
+  "policy": {
+    "hidden_dim": 256,
+    "num_waypoints": 10,
+    "waypoint_dim": 2
+  }
+}
