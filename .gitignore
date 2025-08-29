@@ -21,6 +21,7 @@ eval/vis/
 .venv/
 .venv_*/
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.pyd
