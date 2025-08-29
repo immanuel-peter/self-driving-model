@@ -96,7 +96,14 @@ class PointNet(nn.Module):
         return x
 
 class NuScenesExpert(nn.Module):
-    def __init__(self, image_backbone=None, lidar_backbone=None, fusion='concat', num_queries=100):
+    def __init__(self,
+                 image_backbone=None,
+                 lidar_backbone=None,
+                 fusion: str = 'concat',
+                 num_queries: int = 100,
+                 use_lidar: bool = False,
+                 use_tnet: bool = False,
+                 bbox_dim: int = 7):
         super().__init__()
 
         # Image encoder (ResNet-18)
@@ -109,17 +116,26 @@ class NuScenesExpert(nn.Module):
             self.image_backbone = image_backbone
             self.image_projection = nn.Identity()
 
-        # LIDAR encoder (PointNet)
-        if lidar_backbone is None:
-            self.lidar_backbone = PointNet(output_dim=256, use_tnet=True)
+        # LIDAR encoder (PointNet) — optional; mirrors checkpoints when disabled
+        self.use_lidar = use_lidar
+        if self.use_lidar:
+            if lidar_backbone is None:
+                self.lidar_backbone = PointNet(output_dim=256, use_tnet=use_tnet)
+            else:
+                self.lidar_backbone = lidar_backbone
         else:
-            self.lidar_backbone = lidar_backbone
+            self.lidar_backbone = None
 
         # Fusion and multi-query detection head
         self.fusion_type = fusion  # 'concat' or 'sum'
-        fusion_dim = 512 if fusion == 'concat' else 256
+        # If image-only or fusion=sum, feature dim is 256; if concat with lidar, 512
+        if self.use_lidar and self.fusion_type == 'concat':
+            fusion_dim = 512
+        else:
+            fusion_dim = 256
         self.num_queries = num_queries
-        
+        self.bbox_dim = bbox_dim
+
         # --- KEY CHANGE: Learnable query embeddings ---
         # These queries will specialize in finding different types of objects
         self.query_embed = nn.Embedding(num_queries, fusion_dim)
@@ -136,26 +152,31 @@ class NuScenesExpert(nn.Module):
         
         # Detection heads (now operate on each query)
         self.class_head = nn.Linear(128, 10)  # 10 classes
-        self.bbox_head = nn.Linear(128, 7)    # 7 box params
+        self.bbox_head = nn.Linear(128, self.bbox_dim)    # configurable box params (e.g., 4 for 2D)
 
     def forward(self, batch):
         image = batch['image']         # [B, 3, H, W]
-        lidar = batch['lidar']         # [B, P, 3]   ← padded tensor
+        lidar = batch.get('lidar', None)         # [B, P, 3] if provided
 
         # 1) Image branch
         img_feat = self.image_backbone(image)       # [B, 512, 1, 1]
         img_feat = img_feat.view(img_feat.size(0), -1)  # [B, 512]
         img_feat = self.image_projection(img_feat)      # [B, 256]
 
-        # 2) Lidar branch: directly use the padded tensor
-        #    PointNet expects [B, N, 3]
-        lidar_feat = self.lidar_backbone(lidar)    # [B, 256]
+        # 2) Lidar branch (optional): directly use the padded tensor; PointNet expects [B, N, 3]
+        if self.use_lidar and self.lidar_backbone is not None and lidar is not None:
+            lidar_feat = self.lidar_backbone(lidar)    # [B, 256]
+        else:
+            lidar_feat = None
 
         # 3) Fuse scene features
-        if self.fusion_type == 'concat':
-            fused_feat = torch.cat([img_feat, lidar_feat], dim=-1)  # [B, 512]
+        if self.use_lidar and lidar_feat is not None:
+            if self.fusion_type == 'concat':
+                fused_feat = torch.cat([img_feat, lidar_feat], dim=-1)  # [B, 512]
+            else:
+                fused_feat = img_feat + lidar_feat                      # [B, 256]
         else:
-            fused_feat = img_feat + lidar_feat                      # [B, 256]
+            fused_feat = img_feat  # image-only
 
         # 4) Process multiple queries for multi-object detection
         B = fused_feat.size(0)
@@ -173,7 +194,7 @@ class NuScenesExpert(nn.Module):
         
         # Generate predictions for each query
         cls_logits = self.class_head(x)  # [B, num_queries, 10]
-        bbox_preds = self.bbox_head(x)   # [B, num_queries, 7]
+        bbox_preds = self.bbox_head(x)   # [B, num_queries, bbox_dim]
         
         return {
             'class_logits': cls_logits,

@@ -1,0 +1,24 @@
+{
+    "task": "gating_network",
+    "epochs": 50,
+    "batch_size": 32,
+    "learning_rate": 0.0004,
+    "weight_decay": 0.0001,
+    "device": "cuda",
+    "num_workers": 12,
+    "run_name": "automoe_gating_v2",
+    "sequence_length": 10,
+    "image_size": [
+        224,
+        224
+    ],
+    "save_freq": 10,
+    "ade_weight": 1.0,
+    "fde_weight": 2.0,
+    "speed_weight": 0.2,
+    "smoothness_weight": 0.1,
+    "load_balancing_weight": 0.01,
+    "entropy_weight": 0.001,
+    "use_load_balancing": true,
+    "use_entropy_loss": true
+}

@@ -113,9 +113,12 @@ class CarlaSequenceDataset(Dataset):
         rot_t = current["vehicle_state"]["rotation"].to(torch.float32)   # [pitch, yaw, roll]
         yaw_t_deg: float = float(rot_t[1].item())
 
-        # Build waypoints (ego frame) and speed profile from futures
+        # Build waypoints (ego frame) and speed/control profiles from futures
         waypoints_xy: List[torch.Tensor] = []
         speeds: List[float] = []
+        throttles: List[float] = []
+        steerings: List[float] = []
+        brakes: List[float] = []
         origin_xy = loc_t[:2].to(torch.float32)
 
         for f in futures:
@@ -124,9 +127,17 @@ class CarlaSequenceDataset(Dataset):
             p_ego = _world_to_ego_xy(p_world_xy, origin_xy, yaw_t_deg)
             waypoints_xy.append(p_ego)
             speeds.append(float(f["vehicle_state"]["speed_kmh"].item()))
+            ctrl_f = f["vehicle_state"]["control"].to(torch.float32)
+            # control layout: [throttle, steer, brake]
+            throttles.append(float(ctrl_f[0].item()))
+            steerings.append(float(ctrl_f[1].item()))
+            brakes.append(float(ctrl_f[2].item()))
 
         waypoints = torch.stack(waypoints_xy, dim=0)  # [H, 2]
         speed_profile = torch.tensor(speeds, dtype=torch.float32)  # [H]
+        throttle_profile = torch.tensor(throttles, dtype=torch.float32)  # [H]
+        steering_profile = torch.tensor(steerings, dtype=torch.float32)  # [H]
+        brake_profile = torch.tensor(brakes, dtype=torch.float32)  # [H]
 
         # Optional compact context vector if present in preprocessed sample
         context_tensor: Optional[torch.Tensor] = None
@@ -146,6 +157,9 @@ class CarlaSequenceDataset(Dataset):
             "image": image_t,
             "waypoints": waypoints,
             "speed": speed_profile,
+            "throttle": throttle_profile,
+            "steering": steering_profile,
+            "brake": brake_profile,
             "meta": {
                 "run_id": current.get("meta", {}).get("run_id", run_dir.name),
                 "frame_id": int(current.get("meta", {}).get("frame_id", t)),
@@ -160,6 +174,9 @@ def carla_sequence_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     images = torch.stack([b["image"] for b in batch], dim=0)
     waypoints = torch.stack([b["waypoints"] for b in batch], dim=0)
     speeds = torch.stack([b["speed"] for b in batch], dim=0)
+    throttles = torch.stack([b["throttle"] for b in batch], dim=0) if "throttle" in batch[0] else None
+    steerings = torch.stack([b["steering"] for b in batch], dim=0) if "steering" in batch[0] else None
+    brakes = torch.stack([b["brake"] for b in batch], dim=0) if "brake" in batch[0] else None
     contexts: Optional[torch.Tensor] = None
     if "context" in batch[0]:
         contexts = torch.stack([b["context"] for b in batch], dim=0)
@@ -171,6 +188,12 @@ def carla_sequence_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         "speed": speeds,
         "meta": metas,
     }
+    if throttles is not None:
+        out["throttle"] = throttles
+    if steerings is not None:
+        out["steering"] = steerings
+    if brakes is not None:
+        out["brake"] = brakes
     if contexts is not None:
         out["context"] = contexts
     return out
