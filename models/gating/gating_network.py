@@ -63,7 +63,11 @@ class GatingNetwork(nn.Module):
                  processed_dim: int = 256,
                  hidden_dim: int = 128,
                  temperature: float = 1.0,
-                 use_softmax: bool = True):
+                 use_softmax: bool = True,
+                 top_k: int = 0,
+                 noise_type: str = 'gumbel',
+                 noise_scale: float = 1.0,
+                 apply_topk_at_eval: bool = False):
         super().__init__()
         self.num_experts = num_experts
         self.context_dim = context_dim
@@ -71,6 +75,11 @@ class GatingNetwork(nn.Module):
         self.hidden_dim = hidden_dim
         self.temperature = temperature
         self.use_softmax = use_softmax
+        # Noisy Top-K routing controls
+        self.top_k = max(0, int(top_k))
+        self.noise_type = noise_type
+        self.noise_scale = float(noise_scale)
+        self.apply_topk_at_eval = bool(apply_topk_at_eval)
         
         # Default expert output dimensions if not provided
         if expert_output_dims is None:
@@ -95,6 +104,26 @@ class GatingNetwork(nn.Module):
         
         # Output projection
         self.output_projection = nn.Linear(processed_dim, processed_dim)
+
+    def _sample_noise(self, shape, device):
+        if self.noise_scale <= 0.0:
+            return torch.zeros(shape, device=device)
+        if self.noise_type.lower() == 'gumbel':
+            # Gumbel(0,1): -log(-log(U))
+            u = torch.rand(shape, device=device).clamp_(1e-6, 1 - 1e-6)
+            return -torch.log(-torch.log(u)) * self.noise_scale
+        elif self.noise_type.lower() == 'gaussian':
+            return torch.randn(shape, device=device) * self.noise_scale
+        else:
+            return torch.zeros(shape, device=device)
+
+    def _apply_topk_mask(self, logits: torch.Tensor, k: int) -> torch.Tensor:
+        if k <= 0 or k >= logits.size(1):
+            return logits
+        topk_vals, topk_idx = torch.topk(logits, k, dim=1)
+        mask = torch.full_like(logits, fill_value=float('-inf'))
+        mask.scatter_(1, topk_idx, topk_vals)
+        return mask
         
     def forward(self, 
                 expert_outputs: List[torch.Tensor], 
@@ -126,13 +155,21 @@ class GatingNetwork(nn.Module):
         # 4. Generate gating weights
         gate_input = torch.cat([context_features, all_processed], dim=1)  # [B, hidden_dim + processed_dim * num_experts]
         gate_logits = self.gate_network(gate_input)  # [B, num_experts]
-        
-        # 5. Apply temperature and softmax
+
+        # 5. Optional noisy Top-K routing
+        apply_topk = (self.top_k > 0) and (self.training or self.apply_topk_at_eval)
+        logits_for_softmax = gate_logits
+        if apply_topk:
+            noise = self._sample_noise(gate_logits.shape, gate_logits.device)
+            noisy_logits = gate_logits + noise
+            masked_logits = self._apply_topk_mask(noisy_logits, self.top_k)
+            logits_for_softmax = masked_logits
+
+        # Convert logits to weights
         if self.use_softmax:
-            gate_weights = F.softmax(gate_logits / self.temperature, dim=1)  # [B, num_experts]
+            gate_weights = F.softmax(logits_for_softmax / self.temperature, dim=1)  # [B, num_experts]
         else:
-            gate_weights = torch.sigmoid(gate_logits)  # [B, num_experts]
-            # Normalize to sum to 1
+            gate_weights = torch.sigmoid(logits_for_softmax)  # [B, num_experts]
             gate_weights = gate_weights / (gate_weights.sum(dim=1, keepdim=True) + 1e-8)
         
         # 6. Weighted combination of expert outputs
@@ -161,12 +198,28 @@ class GatingNetwork(nn.Module):
         
         gate_input = torch.cat([context_features, all_processed], dim=1)
         gate_logits = self.gate_network(gate_input)
-        
+
+        # For analysis, do not apply noisy top-k unless explicitly set to apply at eval
+        apply_topk = (self.top_k > 0) and self.apply_topk_at_eval
+        logits_for_softmax = gate_logits
+        if apply_topk:
+            noise = self._sample_noise(gate_logits.shape, gate_logits.device)
+            noisy_logits = gate_logits + noise
+            logits_for_softmax = self._apply_topk_mask(noisy_logits, self.top_k)
+
         if self.use_softmax:
-            return F.softmax(gate_logits / self.temperature, dim=1)
+            return F.softmax(logits_for_softmax / self.temperature, dim=1)
         else:
-            gate_weights = torch.sigmoid(gate_logits)
+            gate_weights = torch.sigmoid(logits_for_softmax)
             return gate_weights / (gate_weights.sum(dim=1, keepdim=True) + 1e-8)
+
+    def get_gating_logits(self, context: torch.Tensor) -> torch.Tensor:
+        """Return raw gating logits (no softmax), context-only path for analysis."""
+        context_features = self.context_encoder(context)
+        dummy_expert_outputs = [torch.zeros(context.size(0), self.processed_dim, device=context.device)] * self.num_experts
+        all_processed = torch.cat(dummy_expert_outputs, dim=1)
+        gate_input = torch.cat([context_features, all_processed], dim=1)
+        return self.gate_network(gate_input)
 
 class MoEArchitecture(nn.Module):
     """Complete Mixture of Experts architecture"""

@@ -33,7 +33,11 @@
     "processed_dim": 256,
     "hidden_dim": 128,
     "temperature": 1.0,
-    "use_softmax": true
+    "use_softmax": true,
+    "top_k": 2,
+    "noise_type": "gumbel",
+    "noise_scale": 0.0,
+    "apply_topk_at_eval": true
   },
   "context": {
     "type": "simple",

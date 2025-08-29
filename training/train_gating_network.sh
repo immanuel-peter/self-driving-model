@@ -24,10 +24,10 @@ exec > >(tee "${LOG_FILE}") 2>&1
 trap 'echo ""; echo "=============================================================="; echo "GATING TRAINING FAILED"; echo "End Time: $(date)"; echo "Log: ${LOG_FILE}"; echo "=============================================================="; exit 1' ERR
 
 # Configuration
-CONFIG_FILE="models/configs/gating_network/automoe_gating_v1/config.json"
+CONFIG_FILE="models/configs/gating_network/automoe_gating_v2/config.json"
 DATA_ROOT="/ephemeral/datasets/carla/preprocessed"
-CHECKPOINT_DIR="models/checkpoints/gating"
-RUN_NAME="automoe_gating_v1"
+CHECKPOINT_DIR="models/checkpoints/gating_network/automoe_gating_v2"
+RUN_NAME="automoe_gating_v2"
 
 # Expert checkpoint paths (update these with actual paths)
 EXPERT_CHECKPOINTS=(
