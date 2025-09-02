@@ -1,6 +1,8 @@
 # AutoMoE: Mixture of Experts Self-Driving Model
 
-[![Project Status](https://img.shields.io/badge/status-in%20development-yellowgreen.svg)](https://github.com/immanuel-peter/self-driving-model)
+[![Project Status](https://img.shields.io/badge/status-paused-yellow.svg)](https://github.com/immanuel-peter/self-driving-model)
+
+> Note: Development is currently paused. For context on lessons learned and next steps, see [SHORTCOMINGS.md](SHORTCOMINGS.md).
 
 This repository contains the code and experiments for building a modular, multi-task self-driving system based on a **Mixture-of-Experts (MoE)** architecture. The goal is to develop a robust model capable of navigating complex environments in the [CARLA simulator](https://carla.org/).
 
@@ -23,7 +25,7 @@ This approach is designed to be more modular, interpretable, and efficient than 
   - Fine-tuning the pre-trained expert models on CARLA data (Stage 3) to adapt them to the CARLA simulator environment.
   - Gating network implementation and training infrastructure (Stages 5-6).
 
-* **▶️ In Progress**: 
+* **⏸️ Paused**: 
   - Integrated MoE + Policy simulation testing (Stage 7).
 
 -----
@@ -37,7 +39,6 @@ This project follows a structured, multi-stage development plan that separates *
 - ✅ **Stage 2: Expert Training & Evaluation**
   - Train and evaluate the expert models (detection, segmentation, drivable) on their respective primary datasets to create strong, specialized baselines.
 - ✅ **Stage 3: CARLA Expert Adaptation**
-  - Generate CARLA supervision (pseudo-labels from BDD experts or GT from CARLA sensors).
   - Fine-tune experts on CARLA to reduce domain gap and produce clean outputs in the simulator environment.
 - ✅ **Stage 4: Policy Head Development**
   - Train a CARLA-specific control module (BC, IL, or RL) to turn perception outputs into `{steer, throttle, brake}` commands.
@@ -45,15 +46,54 @@ This project follows a structured, multi-stage development plan that separates *
   - Design and implement the gating network architecture responsible for combining expert outputs before the policy head.
 - ✅ **Stage 6: Gating Network Training**
   - Train the gating network on CARLA-adapted expert outputs to improve expert routing in the target domain.
-- ▶️ **Stage 7: Integrated MoE + Policy Simulation**
+- ⏸️ **Stage 7: Integrated MoE + Policy Simulation**
   - Wire perception experts, gating network, and control module into CARLA’s synchronous simulation loop.
   - Evaluate closed-loop driving performance (route completion, infractions/km, jerk).
-- **Stage 8: Joint Fine-Tuning (Optional)**
-  - Use DAgger, RL, or IL to jointly fine-tune perception, gating, and control in-sim for robustness.
 
 
 -----
 
 ## ⚙️ Setup and Usage
 
-> Coming soon
+For accepted arguments and environment variables, open each referenced script file.
+
+### 0. Environment setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 1. Collect and Preprocess Datasets
+
+```bash
+python3 scripts/preprocess_bdd100k.py
+python3 scripts/preprocess_nuscenes.py
+python3 scripts/preprocess_carla.py
+```
+
+### 2. Train the Experts
+
+```bash
+bash training/train_bdd100k_experts_ddp.sh
+bash training/train_nuscenes_expert_ddp.sh
+```
+
+### 3. Fine-tune Experts on CARLA
+
+```bash
+bash training/finetune_experts_carla.sh
+```
+
+### 4. Train Gating Network
+
+```bash
+bash training/train_gating_network.sh
+```
+
+### 5. Run Inference
+
+```bash
+bash inference/run_automoe.sh
+```
