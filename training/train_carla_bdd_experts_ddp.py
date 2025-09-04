@@ -3,7 +3,6 @@ import json
 import os
 from pathlib import Path
 import sys
-
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -64,7 +63,6 @@ class Trainer:
                 cost_giou=self.config.get('cost_giou', 2.0)
             )
         else:
-            # For segmentation/drivable tasks, cache class count and loss
             self.seg_num_classes = getattr(base_model, 'num_classes', None)
             if self.seg_num_classes is None:
                 raise AttributeError('Segmentation model must expose num_classes')
@@ -111,7 +109,6 @@ class Trainer:
                 target_classes_flat[off + pi] = targets_cxcywh[b]['labels'][ti]
                 target_boxes_flat[off + pi] = targets_cxcywh[b]['boxes'][ti]
 
-        # Robust classification loss: skip positions with background (ignore)
         valid_cls = target_classes_flat != self.num_classes
         if valid_cls.any():
             cls_loss = F.cross_entropy(
@@ -134,7 +131,6 @@ class Trainer:
         masks = batch['mask'].to(self.device)
         # Sanitize labels: set anything outside [0, num_classes-1] to ignore (255)
         if masks.dim() == 4:
-            # In case any loader returns [B,H,W,C], take first channel
             masks = masks[..., 0]
         invalid = (masks < 0) | (masks >= self.seg_num_classes)
         if invalid.any():
@@ -147,7 +143,6 @@ class Trainer:
         self.model.train()
         total = 0.0
         start = time.time()
-        # Only rank 0 shows a tqdm with epoch info
         desc = f"train | epoch {epoch_idx+1}/{self.config['epochs']}"
         iterable = self.train_loader if self.rank != 0 else tqdm(self.train_loader, desc=desc)
         for batch in iterable:
@@ -193,7 +188,6 @@ def ddp_worker(rank: int, world_size: int, args):
     setup_ddp(rank, world_size)
     device = torch.device(f'cuda:{rank}') if torch.cuda.is_available() else torch.device('cpu')
 
-    # Datasets and samplers
     if args.task == 'detection':
         train_set = CarlaDetectionDataset('train', root_dir=args.data_root)
         val_set = CarlaDetectionDataset('val', root_dir=args.data_root)
@@ -213,7 +207,6 @@ def ddp_worker(rank: int, world_size: int, args):
         val_loader = DataLoader(val_set, batch_size=args.batch_size, sampler=DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False), num_workers=args.num_workers, pin_memory=True, drop_last=False)
         model = BDDDrivableExpert(pretrained_backbone=True).to(device)
 
-    # Wrap DDP
     model = DDP(model, device_ids=[rank] if device.type == 'cuda' else None, output_device=rank if device.type == 'cuda' else None, find_unused_parameters=False)
 
     trainer = Trainer(args.task, model, train_loader, val_loader, device, vars(args), rank)
@@ -224,12 +217,10 @@ def ddp_worker(rank: int, world_size: int, args):
         train_loader.sampler.set_epoch(epoch)
         trainer.train_epoch(epoch)
         val = trainer.validate()
-        # Reduce best val across ranks (take min)
         t = torch.tensor([val], device=device)
         dist.all_reduce(t, op=dist.ReduceOp.MIN)
         best = min(best, float(t.item()))
 
-    # Save only on rank 0
     if rank == 0:
         total_time = time.time() - run_start
         ckpt_dir = Path(f"models/checkpoints/carla_{args.task}_expert_ddp/{args.run_name}")
@@ -263,19 +254,16 @@ def parse_args():
     parser.add_argument('--cost_bbox', type=float, default=5.0)
     parser.add_argument('--cost_giou', type=float, default=2.0)
     parser.add_argument('--run_name', type=str, default='carla_ft_ddp')
-    # torchrun env inferred: LOCAL_RANK / RANK / WORLD_SIZE, we use torchrun to spawn
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    # torchrun will set WORLD_SIZE and LOCAL_RANK; using spawn fallback if missing
     world_size = int(os.environ.get('WORLD_SIZE', '1'))
     local_rank = int(os.environ.get('LOCAL_RANK', '0'))
     if world_size > 1:
         ddp_worker(local_rank, world_size, args)
     else:
-        # Single process (still run the same worker path)
         ddp_worker(0, 1, args)
 
 

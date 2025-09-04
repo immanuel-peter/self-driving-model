@@ -27,11 +27,10 @@ def visualize_batch(model: nn.Module, images: torch.Tensor, gt_boxes: torch.Tens
     # [B, Q, C] and [B, Q, 4]
     pred_logits = pred_logits.permute(0, 2, 3, 1).reshape(B, Q, C)
     pred_probs, pred_classes = pred_logits.softmax(-1).max(dim=-1)  # [B, Q]
-    pred_boxes = pred_boxes.permute(0, 2, 3, 1).reshape(B, Q, 4)    # cx,cy,w,h (same convention as training/eval)
+    pred_boxes = pred_boxes.permute(0, 2, 3, 1).reshape(B, Q, 4)    # cx,cy,w,h
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Try to load a default font; fallback to none
     try:
         font = ImageFont.load_default()
     except Exception:
@@ -43,14 +42,14 @@ def visualize_batch(model: nn.Module, images: torch.Tensor, gt_boxes: torch.Tens
         pil = Image.fromarray((img.permute(1, 2, 0).numpy() * 255).astype('uint8'))
         draw = ImageDraw.Draw(pil)
 
-        # Ground-truth: convert to xyxy for drawing
+        # convert to xyxy
         gt_mask = (gt_labels[b] != -1)
-        gt_xyxy = box_convert(gt_boxes[b][gt_mask].cpu(), 'xyxy', 'xyxy')  # identity, stored as xyxy in dataset
+        gt_xyxy = box_convert(gt_boxes[b][gt_mask].cpu(), 'xyxy', 'xyxy')
         for xy in gt_xyxy:
             x1, y1, x2, y2 = [float(v) for v in xy]
             draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=2)
 
-        # Predictions: take top-K by confidence and threshold
+        # take top-K by confidence and threshold
         scores = pred_probs[b].cpu()
         boxes = pred_boxes[b].cpu()
         classes = pred_classes[b].cpu()
@@ -66,10 +65,10 @@ def visualize_batch(model: nn.Module, images: torch.Tensor, gt_boxes: torch.Tens
             boxes = boxes[topk_idx]
             classes = classes[topk_idx]
 
-            # Convert to xyxy for drawing; boxes are expected in cxcywh as in training/eval
+            # Convert to xyxy
             pred_xyxy = box_convert(boxes, 'cxcywh', 'xyxy')
 
-            # Draw predictions in red
+            # draw predictions in red
             for i, xy in enumerate(pred_xyxy):
                 x1, y1, x2, y2 = [float(v) for v in xy]
                 draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
@@ -96,7 +95,6 @@ def main():
 
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
 
-    # Model and checkpoint
     model = BDDDetectionExpert()
     ckpt_path = Path(f"models/checkpoints/bdd100k_detection_expert/{args.run_name}/best.pth")
     if not ckpt_path.exists():
@@ -107,15 +105,12 @@ def main():
     model.to(device)
     model.eval()
 
-    # Data
     loader = get_bdd_detection_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False)
 
-    # Output directory
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out_dir = Path("eval/vis") / f"bdd100k_detection_{args.run_name}_{args.split}_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Iterate over batches until limit is reached
     num_done = 0
     for batch in loader:
         images = batch["image"]

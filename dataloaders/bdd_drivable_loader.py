@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_image
 
-BASE_DIR = os.environ.get('BDD100K_DRIVABLE_DIR', 'datasets/bdd100k/preprocessed/drivable')
+BASE_DIR = 'datasets/bdd100k/preprocessed/drivable'
 BATCH_SIZE = 32
 NUM_WORKERS = 4
 
@@ -20,9 +20,8 @@ class BDD100KDrivableDataset(Dataset):
         sample = torch.load(self.pt_files[idx], weights_only=False)
         image = read_image(sample["image_path"]).float() / 255.0
         mask_t = read_image(sample["mask_path"]).long()  # [C,H,W]
-        # Robust channel handling: accept 1- or 3-channel masks; reduce to single channel
         if mask_t.dim() == 3 and mask_t.shape[0] > 1:
-            mask = mask_t[0]  # take first channel
+            mask = mask_t[0]
         else:
             mask = mask_t.squeeze(0)
 
@@ -46,7 +45,6 @@ def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None,
         shuffle: whether to shuffle (default: True for train, False for val/test)
         transform: image transformations
     """
-    # Set defaults based on split
     if batch_size is None:
         batch_size = BATCH_SIZE
     if num_workers is None:
@@ -54,7 +52,6 @@ def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None,
     if shuffle is None:
         shuffle = (split == 'train')
     
-    # Build path
     root = Path(base_dir) if base_dir is not None else Path(BASE_DIR)
     split_dir = root / split
     if not split_dir.exists():
@@ -68,5 +65,5 @@ def get_bdd_drivable_loader(split='train', batch_size=None, num_workers=None,
         shuffle=shuffle, 
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=(split == 'train')  # Only drop last for training
+        drop_last=(split == 'train'),
     )

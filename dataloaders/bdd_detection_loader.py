@@ -4,7 +4,6 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_image
 from pathlib import Path
 
-# Config
 BASE_DIR = 'datasets/bdd100k/preprocessed/detection'
 BATCH_SIZE = 32
 NUM_WORKERS = 4
@@ -80,7 +79,6 @@ def get_bdd_detection_loader(split='train', batch_size=None, num_workers=None,
         shuffle: whether to shuffle (default: True for train, False for val/test)
         transform: image transformations
     """
-    # Set defaults based on split
     if batch_size is None:
         batch_size = BATCH_SIZE
     if num_workers is None:
@@ -88,7 +86,6 @@ def get_bdd_detection_loader(split='train', batch_size=None, num_workers=None,
     if shuffle is None:
         shuffle = (split == 'train')
     
-    # Build path
     split_dir = Path(BASE_DIR) / split
     if not split_dir.exists():
         raise FileNotFoundError(f"Split directory not found: {split_dir}")
@@ -101,6 +98,6 @@ def get_bdd_detection_loader(split='train', batch_size=None, num_workers=None,
         shuffle=shuffle, 
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=(split == 'train'),  # Only drop last for training
+        drop_last=(split == 'train'),
         collate_fn=detection_collate_fn
     )

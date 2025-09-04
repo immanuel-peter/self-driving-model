@@ -21,7 +21,6 @@ COST_BBOX=${COST_BBOX:-5.0}
 COST_GIOU=${COST_GIOU:-2.0}
 BBOX_LOSS_W=${BBOX_LOSS_W:-5.0}
 
-# Configure logging so set -e still works with tee
 {
   :
 } > /dev/null

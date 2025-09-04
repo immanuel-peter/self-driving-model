@@ -1,14 +1,11 @@
 from pathlib import Path
 from typing import Dict
-
 import torch
 from torch.utils.data import Dataset, DataLoader
-
 
 DEFAULT_CARLA_PREPROCESSED_ROOT = "datasets/carla/preprocessed"
 BATCH_SIZE = 32
 NUM_WORKERS = 4
-
 
 class CarlaSegmentationDataset(Dataset):
     def __init__(self, split: str = "train", root_dir: str = DEFAULT_CARLA_PREPROCESSED_ROOT):
@@ -27,12 +24,11 @@ class CarlaSegmentationDataset(Dataset):
         image: torch.Tensor = sample["image"]
         mask = sample.get("mask", None)
         if mask is None:
-            # Use ignore index everywhere if mask missing
             mask = torch.full((image.shape[-2], image.shape[-1]), 255, dtype=torch.long)
         else:
             # Normalize mask to 2D long tensor [H, W]
             if mask.dim() == 3:
-                # [H,W,C] or [C,H,W] -> pick first channel
+                # [H,W,C] or [C,H,W]
                 if mask.shape[-1] in (3, 4):
                     mask = mask[..., 0]
                 elif mask.shape[0] in (3, 4):

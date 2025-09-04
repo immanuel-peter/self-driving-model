@@ -16,20 +16,15 @@ class ContextFeatureExtractor(nn.Module):
         self.include_time = include_time
         self.include_road = include_road
         
-        # Vehicle state features (always included)
         self.input_dim = 4  # speed, steering, throttle, brake
         
-        # Weather features
         if self.include_weather:
             self.input_dim += 4  # rain, fog, wetness, sun_angle
-        # Time features
         if self.include_time:
             self.input_dim += 2  # hour (sin/cos), minute (sin/cos)
-        # Road features
         if self.include_road:
             self.input_dim += 3  # road_type, lane_count, road_curvature
         
-        # Context encoder
         self.context_encoder = nn.Sequential(
             nn.Linear(self.input_dim, context_dim),
             nn.ReLU(),
@@ -40,11 +35,9 @@ class ContextFeatureExtractor(nn.Module):
         
     def _encode_time(self, hour: torch.Tensor, minute: torch.Tensor) -> torch.Tensor:
         """Encode time using cyclical encoding"""
-        # Convert to radians
         hour_rad = 2 * math.pi * hour / 24.0
         minute_rad = 2 * math.pi * minute / 60.0
         
-        # Sin/cos encoding
         hour_sin = torch.sin(hour_rad)
         hour_cos = torch.cos(hour_rad)
         minute_sin = torch.sin(minute_rad)
@@ -68,7 +61,7 @@ class ContextFeatureExtractor(nn.Module):
         wetness = weather_data.get('wetness', torch.zeros(weather_data['speed'].size(0), 1, device=weather_data['speed'].device))
         features.append(wetness)
         
-        # Sun angle (0-1, normalized)
+        # Sun angle (0-1)
         sun_angle = weather_data.get('sun_angle', torch.zeros(weather_data['speed'].size(0), 1, device=weather_data['speed'].device))
         features.append(sun_angle)
         
@@ -78,7 +71,7 @@ class ContextFeatureExtractor(nn.Module):
         """Encode road features"""
         features = []
         
-        # Road type (one-hot encoded)
+        # Road type
         road_type = road_data.get('road_type', torch.zeros(road_data['speed'].size(0), 1, device=road_data['speed'].device))
         features.append(road_type)
         
@@ -112,7 +105,6 @@ class ContextFeatureExtractor(nn.Module):
         
         features = []
         
-        # Vehicle state features (always included)
         vehicle_features = torch.cat([
             context_data['speed'],
             context_data['steering'],
@@ -121,27 +113,22 @@ class ContextFeatureExtractor(nn.Module):
         ], dim=-1)
         features.append(vehicle_features)
         
-        # Weather features
         if self.include_weather:
             weather_features = self._encode_weather(context_data.get('weather', {}))
             features.append(weather_features)
         
-        # Time features
         if self.include_time:
             hour = context_data.get('hour', torch.zeros(batch_size, 1, device=device))
             minute = context_data.get('minute', torch.zeros(batch_size, 1, device=device))
             time_features = self._encode_time(hour, minute)
             features.append(time_features)
         
-        # Road features
         if self.include_road:
             road_features = self._encode_road(context_data.get('road', {}))
             features.append(road_features)
         
-        # Concatenate all features
         combined_features = torch.cat(features, dim=-1)
         
-        # Encode context
         context_features = self.context_encoder(combined_features)
         
         return context_features
@@ -153,7 +140,6 @@ class SimpleContextExtractor(nn.Module):
         super().__init__()
         self.context_dim = context_dim
         
-        # Simple vehicle state encoder
         self.encoder = nn.Sequential(
             nn.Linear(4, 32),  # speed, steering, throttle, brake
             nn.ReLU(),

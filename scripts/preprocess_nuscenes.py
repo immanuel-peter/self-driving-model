@@ -29,7 +29,6 @@ def get_scenes_by_split(nusc):
         elif name in val_scene_names:
             available['val'].append(scene)
         else:
-            # This shouldn't happen with official splits, but just in case
             available['train'].append(scene)
 
     return available

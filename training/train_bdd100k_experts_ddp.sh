@@ -23,7 +23,6 @@ NUM_GPUS=${NUM_GPUS:-2}
     :
 } > /dev/null
 
-# Configure logging so set -e works. Don't pipe whole block; redirect FD instead.
 exec > >(tee "${LOG_FILE}") 2>&1
 
 echo "================================================================="

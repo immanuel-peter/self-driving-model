@@ -33,7 +33,6 @@ class TNet(nn.Module):
         x = F.relu(self.bn5(self.fc2(x)))
         x = self.fc3(x)  # [B, k*k]
         
-        # Initialize as identity transformation
         iden = torch.eye(self.k, device=x.device, dtype=x.dtype).view(1, self.k * self.k).repeat(x.size(0), 1)
         x = x + iden
         x = x.view(-1, self.k, self.k)
@@ -72,7 +71,7 @@ class PointNet(nn.Module):
         
         if self.use_tnet:
             trans_input = self.input_transform(x.transpose(2, 1))  # [B, 3, 3]
-            x = torch.bmm(trans_input, x)  # Apply transformation
+            x = torch.bmm(trans_input, x)
         
         x = F.relu(self.bn1(self.conv1(x)))
         
@@ -83,7 +82,6 @@ class PointNet(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         
-        # Max pooling for permutation invariance
         x = torch.max(x, 2, keepdim=True)[0]  # [B, 1024, 1]
         x = x.view(-1, 1024)  # [B, 1024]
         
@@ -106,17 +104,15 @@ class NuScenesExpert(nn.Module):
                  bbox_dim: int = 7):
         super().__init__()
 
-        # Image encoder (ResNet-18)
         if image_backbone is None:
             resnet18 = models.resnet18(pretrained=True)
-            # Remove the final classification layer
             self.image_backbone = nn.Sequential(*list(resnet18.children())[:-1])
-            self.image_projection = nn.Linear(512, 256)  # ResNet-18 outputs 512 features
+            self.image_projection = nn.Linear(512, 256)
         else:
             self.image_backbone = image_backbone
             self.image_projection = nn.Identity()
 
-        # LIDAR encoder (PointNet) — optional; mirrors checkpoints when disabled
+        # LIDAR encoder (PointNet)
         self.use_lidar = use_lidar
         if self.use_lidar:
             if lidar_backbone is None:
@@ -136,11 +132,8 @@ class NuScenesExpert(nn.Module):
         self.num_queries = num_queries
         self.bbox_dim = bbox_dim
 
-        # --- KEY CHANGE: Learnable query embeddings ---
-        # These queries will specialize in finding different types of objects
         self.query_embed = nn.Embedding(num_queries, fusion_dim)
         
-        # Decoder to process each query with scene context
         self.decoder = nn.Sequential(
             nn.Linear(fusion_dim, 256),
             nn.ReLU(),
@@ -150,20 +143,19 @@ class NuScenesExpert(nn.Module):
             nn.Dropout(0.3),
         )
         
-        # Detection heads (now operate on each query)
-        self.class_head = nn.Linear(128, 10)  # 10 classes
-        self.bbox_head = nn.Linear(128, self.bbox_dim)    # configurable box params (e.g., 4 for 2D)
+        self.class_head = nn.Linear(128, 10)
+        self.bbox_head = nn.Linear(128, self.bbox_dim)
 
     def forward(self, batch):
         image = batch['image']         # [B, 3, H, W]
-        lidar = batch.get('lidar', None)         # [B, P, 3] if provided
+        lidar = batch.get('lidar', None)         # [B, P, 3]
 
-        # 1) Image branch
+        # Image branch
         img_feat = self.image_backbone(image)       # [B, 512, 1, 1]
         img_feat = img_feat.view(img_feat.size(0), -1)  # [B, 512]
         img_feat = self.image_projection(img_feat)      # [B, 256]
 
-        # 2) Lidar branch (optional): directly use the padded tensor; PointNet expects [B, N, 3]
+        # Lidar branch (optional): directly use the padded tensor; PointNet expects [B, N, 3]
         if self.use_lidar and self.lidar_backbone is not None and lidar is not None:
             lidar_feat = self.lidar_backbone(lidar)    # [B, 256]
         else:
@@ -181,18 +173,14 @@ class NuScenesExpert(nn.Module):
         # 4) Process multiple queries for multi-object detection
         B = fused_feat.size(0)
         
-        # Expand scene features to match number of queries
         # fused_feat: [B, fusion_dim] -> [B, num_queries, fusion_dim]
         fused_feat = fused_feat.unsqueeze(1).expand(B, self.num_queries, -1)
         
-        # Add learnable query embeddings to give each query a unique "personality"
         # query_embed.weight: [num_queries, fusion_dim] -> [B, num_queries, fusion_dim]
         queries = self.query_embed.weight.unsqueeze(0).expand(B, -1, -1)
         
-        # Combine scene context with query embeddings
         x = self.decoder(fused_feat + queries)  # [B, num_queries, 128]
         
-        # Generate predictions for each query
         cls_logits = self.class_head(x)  # [B, num_queries, 10]
         bbox_preds = self.bbox_head(x)   # [B, num_queries, bbox_dim]
         

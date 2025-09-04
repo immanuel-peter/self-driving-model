@@ -1,20 +1,14 @@
 #!/bin/bash
 
-# AutoMoE Gating Network Training Script
-# This script trains the gating network using pre-trained expert models
-
 set -eou pipefail
 
-# System/runtime tuning for this machine (2x NVIDIA L40S, ~46GB each)
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 export MKL_NUM_THREADS=${MKL_NUM_THREADS:-8}
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-"expandable_segments:True"}
 export TORCH_SHOW_CPP_STACKTRACES=1
-# Single-node, NVLink present; disable IB to avoid NCCL timeouts if no IB
 export NCCL_P2P_LEVEL=${NCCL_P2P_LEVEL:-NVL}
 export NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-1}
 
-# Logging setup (mirror finetune_experts_carla.sh style)
 mkdir -p logs
 LOG_FILE="logs/train_gating_network_$(date +'%Y-%m-%d_%H-%M-%S').log"
 {
@@ -38,15 +32,10 @@ EXPERT_CHECKPOINTS=(
     "models/checkpoints/carla_nuscenes_2d_ddp/nuscenes_img_only_carla_ft_ddp/best.pth"
 )
 
-########################################
-# Training parameters (tuned for 2x L40S)
-# Values are per-process (per-GPU when WORLD_SIZE>1)
-BATCH_SIZE=32           # per GPU → effective 64
-LEARNING_RATE=4e-4      # scaled up from 1e-4 for effective batch 64
-EPOCHS=50               # faster convergence with larger batch
-NUM_WORKERS=12          # total dataloader workers per process
-
-# Multi-GPU training (set to 2 for this machine)
+BATCH_SIZE=32
+LEARNING_RATE=4e-4
+EPOCHS=50
+NUM_WORKERS=12
 WORLD_SIZE=2
 
 echo "=============================================================="

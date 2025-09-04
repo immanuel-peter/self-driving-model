@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
-# Default Config
 CACHE_ROOT = 'datasets/nuscenes/preprocessed'
 BATCH_SIZE = 32
 NUM_WORKERS = 4
@@ -41,7 +40,6 @@ def nuscenes_collate_fn(batch):
     Returns:
         A single dictionary containing the batched and padded tensors.
     """
-    # Fixed-size tensors can be stacked directly
     images = torch.stack([item['image'] for item in batch], dim=0)
     intrinsics = torch.stack([item['intrinsics'] for item in batch], dim=0)
 
@@ -55,20 +53,17 @@ def nuscenes_collate_fn(batch):
         pts = item['lidar']
         padded_lidars[i, :pts.shape[0], :] = pts
 
-    # --- Convert Box objects to tensor + labels ---
     def _extract_yaw(quaternion):
         """
         Extract yaw (rotation around Z) from a Quaternion.
         Prefers Quaternion.yaw_pitch_roll[0]; falls back to rotation matrix.
         """
-        # Prefer direct property if available
         yaw_pr = getattr(quaternion, 'yaw_pitch_roll', None)
         if yaw_pr is not None:
             try:
                 return float(yaw_pr[0])
             except Exception:
                 pass
-        # Fallback: compute from rotation matrix R (ZYX convention): yaw = atan2(R[1,0], R[0,0])
         R = getattr(quaternion, 'rotation_matrix', None)
         if R is not None:
             try:
@@ -77,7 +72,6 @@ def nuscenes_collate_fn(batch):
                 return math.atan2(r10, r00)
             except Exception:
                 pass
-        # As a last resort, return 0.0 to avoid crash (shouldn't happen for valid data)
         return 0.0
 
     def _canonicalize_class_name(name: str):
@@ -133,7 +127,6 @@ def nuscenes_collate_fn(batch):
         item['boxes'] = boxes_t
         item['labels'] = labels_t
 
-    # --- Pad Ground-Truth Boxes & Labels ---
     max_boxes = max(item['boxes'].shape[0] for item in batch)
     padded_boxes = torch.full(
         (len(batch), max_boxes, 7),
@@ -149,7 +142,6 @@ def nuscenes_collate_fn(batch):
             padded_boxes[i, :n, :] = item['boxes']
             padded_labels[i, :n]   = item['labels']
 
-    # --- Collect tokens ---
     tokens = [item['token'] for item in batch]
 
     return {

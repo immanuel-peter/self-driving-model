@@ -37,7 +37,6 @@ def main():
 
     args = parser.parse_args()
 
-    # List all files in the bucket
     print("Listing all files in GCS bucket...")
     all_files = run_cmd(f"gsutil ls {args.bucket}")
 

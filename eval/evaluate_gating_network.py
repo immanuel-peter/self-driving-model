@@ -34,22 +34,17 @@ def evaluate_model(model: nn.Module,
     
     with torch.no_grad():
         for batch in tqdm(loader, desc="Evaluating"):
-            # Move batch to device
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             
-            # Forward pass
             pred = model(batch)
             
             bs = batch["waypoints"].size(0)
 
-            # Compute metrics (L1 and Euclidean variants)
             ade_l1 = torch.nn.functional.l1_loss(pred["waypoints"], batch["waypoints"])  # already mean over dims
             fde_l1 = torch.nn.functional.l1_loss(pred["waypoints"][:, -1, :], batch["waypoints"][:, -1, :])
 
-            # Euclidean ADE/FDE as commonly reported in trajectory prediction
             ade_euclid = (pred["waypoints"] - batch["waypoints"]).norm(dim=-1).mean()
             fde_euclid = (pred["waypoints"][:, -1] - batch["waypoints"][:, -1]).norm(dim=-1).mean()
-            # Robust speed metric: prefer full sequence when available, else last step
             pred_spd = pred.get("speed_seq", pred.get("speed"))
             target_spd = batch["speed"]
             if (
@@ -79,14 +74,11 @@ def evaluate_model(model: nn.Module,
             total_speed_loss += float(speed_loss.item()) * bs
             total_samples += bs
             
-            # Collect expert weights
             expert_weights_list.append(pred["expert_weights"].cpu().numpy())
-            # Entropy per-sample, averaged over batch
             w = pred["expert_weights"].clamp_min(1e-8)
             entropy = -(w * w.log()).sum(dim=1).mean()
             total_entropy += float(entropy.item()) * bs
     
-    # Compute averages
     avg_ade_l1 = total_ade_l1 / total_samples
     avg_fde_l1 = total_fde_l1 / total_samples
     avg_ade_euclid = total_ade_euclid / total_samples
@@ -94,7 +86,6 @@ def evaluate_model(model: nn.Module,
     avg_speed_loss = total_speed_loss / total_samples
     avg_entropy = total_entropy / total_samples
     
-    # Analyze expert usage
     expert_weights_array = np.concatenate(expert_weights_list, axis=0)
     expert_usage = expert_weights_array.mean(axis=0)
     expert_std = expert_weights_array.std(axis=0)
@@ -119,7 +110,6 @@ def plot_expert_usage(expert_usage: np.ndarray,
     """Plot expert usage statistics"""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
-    # Bar plot of expert usage
     x = np.arange(len(expert_names))
     bars = ax1.bar(x, expert_usage, yerr=expert_std, capsize=5)
     ax1.set_xlabel('Expert')
@@ -128,13 +118,11 @@ def plot_expert_usage(expert_usage: np.ndarray,
     ax1.set_xticks(x)
     ax1.set_xticklabels(expert_names, rotation=45)
     
-    # Add value labels on bars
     for bar, usage in zip(bars, expert_usage):
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height + 0.01,
                 f'{usage:.3f}', ha='center', va='bottom')
     
-    # Pie chart of expert usage
     ax2.pie(expert_usage, labels=expert_names, autopct='%1.1f%%', startangle=90)
     ax2.set_title('Expert Usage Proportion')
     
@@ -152,13 +140,12 @@ def plot_training_curves(log_dir: str, save_path: str):
         ea = EventAccumulator(log_dir)
         ea.Reload()
         
-        # Get scalar events
         scalar_tags = ea.Tags()['scalars']
         
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
         axes = axes.flatten()
         
-        for i, tag in enumerate(scalar_tags[:4]):  # Plot first 4 metrics
+        for i, tag in enumerate(scalar_tags[:4]):
             events = ea.Scalars(tag)
             steps = [event.step for event in events]
             values = [event.value for event in events]
@@ -198,7 +185,6 @@ def analyze_context_expert_correlation(model: nn.Module,
         for batch in tqdm(loader, desc="Analyzing context-expert correlation"):
             batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
 
-            # Build labeled context features (last-step where applicable)
             feats = []
             if isinstance(batch.get('speed', None), torch.Tensor):
                 spd = batch['speed']
@@ -211,13 +197,11 @@ def analyze_context_expert_correlation(model: nn.Module,
                 continue
             C = torch.cat(feats, dim=1)  # [B, C]
 
-            # Get gating
             if use_logits and hasattr(model, "get_gating_logits"):
-                G = model.get_gating_logits(batch)  # [B, E] pre-softmax; recommended
+                G = model.get_gating_logits(batch)  # [B, E]
                 G = G.float()
             else:
-                W = model.get_expert_weights(batch).float()  # [B, E] probs
-                # CLR transform to remove simplex artifact
+                W = model.get_expert_weights(batch).float()  # [B, E]
                 eps = 1e-8
                 Wc = torch.clamp(W, eps, 1.0)
                 logW = torch.log(Wc)
@@ -233,11 +217,9 @@ def analyze_context_expert_correlation(model: nn.Module,
     C = np.concatenate(ctx_list, axis=0)  # [N, C]
     G = np.concatenate(gate_list, axis=0)  # [N, E]
 
-    # Names
     c_names = (context_feature_names + [f"ctx_{i}" for i in range(999)])[:C.shape[1]]
     e_names = (expert_names + [f"E{i}" for i in range(999)])[:G.shape[1]]
 
-    # Guard: drop near-constant columns to avoid exploding z-scores
     def good_cols(X, thr=1e-6):
         return np.where(X.std(axis=0) > thr)[0]
 
@@ -245,7 +227,6 @@ def analyze_context_expert_correlation(model: nn.Module,
     C = C[:, c_keep]; G = G[:, g_keep]
     c_names = [c_names[i] for i in c_keep]; e_names = [e_names[j] for j in g_keep]
 
-    # Compute Pearson and Spearman
     pear = np.zeros((C.shape[1], G.shape[1]), dtype=np.float32)
     spear = np.zeros_like(pear)
     for i in range(C.shape[1]):
@@ -255,7 +236,6 @@ def analyze_context_expert_correlation(model: nn.Module,
             pear[i, j] = 0.0 if np.isnan(p) else p
             spear[i, j] = 0.0 if np.isnan(s) else s
 
-    # Plot Pearson heatmap (Spearman is often similar; save both)
     def plot_heat(M, title, path):
         fig, ax = plt.subplots(figsize=(1.6 * G.shape[1] + 3, 1.1 * C.shape[1] + 2))
         im = ax.imshow(M, cmap='RdBu_r', vmin=-0.8, vmax=0.8, aspect='auto')  # avoid false saturation
@@ -283,23 +263,18 @@ def main():
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for evaluation")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers")
     parser.add_argument("--split", type=str, choices=["val", "test"], default="val", help="Dataset split")
-    
     args = parser.parse_args()
     
-    # Load configurations
     with open(args.config, 'r') as f:
         config = json.load(f)
     
     with open(args.model_config, 'r') as f:
         model_config = json.load(f)
     
-    # Setup device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Create model
     model = create_automoe_model(model_config, device)
     
-    # Load checkpoint with DDP compatibility (strip 'module.' prefixes)
     checkpoint = torch.load(args.checkpoint, map_location=device)
     state_dict = checkpoint.get('model_state_dict', checkpoint)
     if any(k.startswith('module.') for k in state_dict.keys()):
@@ -312,8 +287,6 @@ def main():
         print(f"Loaded with relaxed matching. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
     print(f"Loaded checkpoint from {args.checkpoint}")
     
-    # Create dataset and loader
-    # Use model_config/policy horizon to match number of waypoints expected
     horizon = int(model_config.get('policy', {}).get('num_waypoints', 10))
     test_dataset = CarlaSequenceDataset(
         root_dir=args.data_root,
@@ -333,14 +306,11 @@ def main():
         pin_memory=True
     )
     
-    # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Evaluate model
     print("Evaluating model...")
     results = evaluate_model(model, test_loader, device)
     
-    # Print results
     print("\n=== Evaluation Results ===")
     print(f"ADE (L1): {results['ade_l1']:.4f}")
     print(f"FDE (L1): {results['fde_l1']:.4f}")
@@ -353,7 +323,6 @@ def main():
     for i, (name, usage, std) in enumerate(zip(expert_names, results['expert_usage'], results['expert_std'])):
         print(f"  {name}: {usage:.3f} ± {std:.3f}")
     
-    # Save results
     results_file = os.path.join(args.output_dir, 'evaluation_results.json')
     with open(results_file, 'w') as f:
         json.dump({
@@ -368,7 +337,6 @@ def main():
         }, f, indent=4)
     print(f"\nResults saved to {results_file}")
     
-    # Create plots
     print("\nCreating plots...")
     
     # Expert usage plot
@@ -381,7 +349,7 @@ def main():
         curves_plot_path = os.path.join(args.output_dir, 'training_curves.png')
         plot_training_curves(log_dir, curves_plot_path)
     
-    # Context-expert correlation plot (labeled)
+    # Context-expert correlation plot
     correlation_plot_path = os.path.join(args.output_dir, 'context_expert_correlation.png')
     expert_names = [
         'Detection',
@@ -389,7 +357,7 @@ def main():
         'Drivable',
         'nuScenes',
     ]
-    # Context features we expect to extract (order must match extraction above)
+    # Context features we expect to extract
     context_feature_names = ['speed_last', 'steering_last', 'throttle_last', 'brake_last']
     analyze_context_expert_correlation(
         model, test_loader, device, correlation_plot_path,

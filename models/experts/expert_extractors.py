@@ -75,7 +75,6 @@ class SegmentationExpertExtractor(ExpertOutputExtractor):
         Returns:
             features: [B, output_dim] - extracted features
         """
-        # Extract features
         features = self.feature_extractor(expert_output)  # [B, output_dim]
         return features
 
@@ -103,7 +102,6 @@ class DrivableExpertExtractor(ExpertOutputExtractor):
         Returns:
             features: [B, output_dim] - extracted features
         """
-        # Extract features
         features = self.feature_extractor(expert_output)  # [B, output_dim]
         return features
 
@@ -115,7 +113,6 @@ class NuScenesExpertExtractor(ExpertOutputExtractor):
         self.num_classes = num_classes
         self.bbox_dim = bbox_dim
         
-        # Process query-based outputs
         self.feature_extractor = nn.Sequential(
             nn.Linear(num_queries * (num_classes + self.bbox_dim), 512),  # class_logits + bbox_preds
             nn.ReLU(),
@@ -134,11 +131,8 @@ class NuScenesExpertExtractor(ExpertOutputExtractor):
         class_logits = expert_output['class_logits']  # [B, Q, C]
         bbox_preds = expert_output['bbox_preds']      # [B, Q, 7]
         
-        # Concatenate along last dimension and flatten
         combined = torch.cat([class_logits, bbox_preds], dim=-1)  # [B, Q, C+bbox_dim]
         flattened = combined.view(combined.size(0), -1)  # [B, Q*(C+bbox_dim)]
-        
-        # Extract features
         features = self.feature_extractor(flattened)  # [B, output_dim]
         return features
 

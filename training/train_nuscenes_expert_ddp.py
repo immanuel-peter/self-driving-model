@@ -42,7 +42,6 @@ class NuScenesTrainer:
             self.optimizer, T_max=config['epochs'] * len(self.train_loader)
         )
         
-        # --- Loss Function ---
         # detection losses: CE over 10 classes, SmoothL1 on 7-dim boxes
         self.class_loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
         self.bbox_loss_fn  = nn.SmoothL1Loss(reduction='none')
@@ -53,7 +52,6 @@ class NuScenesTrainer:
             cost_giou=self.config.get('cost_giou',2.0)
         )
         
-        # Only rank 0 should log to tensorboard
         if dist.is_initialized() and dist.get_rank() == 0:
             self.writer = SummaryWriter(f"models/runs/nuscenes_expert_{config['run_name']}")
         else:
@@ -63,21 +61,17 @@ class NuScenesTrainer:
     def train_epoch(self, epoch):
         self.model.train()
         total_loss = 0
-        # Only show progress bar on rank 0
         if dist.is_initialized() and dist.get_rank() == 0:
             pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Train]")
         else:
             pbar = self.train_loader
         
-        # Set epoch for distributed samplers
         if hasattr(self.train_loader, 'sampler') and hasattr(self.train_loader.sampler, 'set_epoch'):
             self.train_loader.sampler.set_epoch(epoch)
 
         for batch in pbar:
             self.optimizer.zero_grad()
             
-            # --- Corrected Model Input ---
-            # Move data to device and construct the dictionary the model expects
             batch_dict = {
                 'image': batch['image'].to(self.device),
                 'lidar': batch['lidar'].to(self.device),
@@ -88,7 +82,6 @@ class NuScenesTrainer:
             pred_logits = outputs['class_logits']  # [B,10]
             pred_boxes  = outputs['bbox_preds']    # [B,7]
 
-            # --- build DETR-style targets from padded boxes/labels ---
             gt_boxes  = batch['boxes'].to(self.device)  # [B, M, 7]
             gt_labels = batch['labels'].to(self.device) # [B, M]
             targets = []
@@ -100,14 +93,12 @@ class NuScenesTrainer:
                     'labels': gt_labels[i][mask]    # [Ni]
                 })
 
-            # --- match preds ⇄ targets (now we have multiple queries per sample) ---
             # pred_logits: [B, num_queries, 10], pred_boxes: [B, num_queries, 7]
             indices = self.matcher(
                 {'pred_logits': pred_logits, 'pred_boxes': pred_boxes},
                 targets
             )
 
-            # --- compute loss ---
             # classification: pred_logits [B, num_queries, 10], targets [B, num_queries]
             B, num_queries, num_classes = pred_logits.shape
             tgt_classes = torch.full((B, num_queries), -1, dtype=torch.int64, device=self.device)
@@ -115,7 +106,6 @@ class NuScenesTrainer:
                 tgt_classes[i, pred_idx] = targets[i]['labels'][tgt_idx]
             loss_cls = self.class_loss_fn(pred_logits.view(-1, num_classes), tgt_classes.view(-1))
 
-            # box regression only on matched:
             tgt_boxes = torch.zeros_like(pred_boxes)
             for i, (pred_idx, tgt_idx) in enumerate(indices):
                 tgt_boxes[i, pred_idx] = targets[i]['boxes'][tgt_idx]
@@ -145,13 +135,11 @@ class NuScenesTrainer:
     def validate(self, epoch):
         self.model.eval()
         total_loss = 0
-        # Only show progress bar on rank 0
         if dist.is_initialized() and dist.get_rank() == 0:
             pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1} [Val]")
         else:
             pbar = self.val_loader
         
-        # Set epoch for distributed samplers
         if hasattr(self.val_loader, 'sampler') and hasattr(self.val_loader.sampler, 'set_epoch'):
             self.val_loader.sampler.set_epoch(epoch)
 
@@ -166,7 +154,6 @@ class NuScenesTrainer:
                 pred_logits = outputs['class_logits']  # [B,10]
                 pred_boxes  = outputs['bbox_preds']    # [B,7]
 
-                # --- build DETR-style targets from padded boxes/labels ---
                 gt_boxes  = batch['boxes'].to(self.device)  # [B, M, 7]
                 gt_labels = batch['labels'].to(self.device) # [B, M]
                 targets = []
@@ -178,13 +165,11 @@ class NuScenesTrainer:
                         'labels': gt_labels[i][mask]    # [Ni]
                     })
 
-                # --- match preds ⇄ targets (now we have multiple queries per sample) ---
                 indices = self.matcher(
                     {'pred_logits': pred_logits, 'pred_boxes': pred_boxes},
                     targets
                 )
 
-                # --- compute loss ---
                 B, num_queries, num_classes = pred_logits.shape
                 tgt_classes = torch.full((B, num_queries), -1, dtype=torch.int64, device=self.device)
                 for i, (pred_idx, tgt_idx) in enumerate(indices):
@@ -205,7 +190,6 @@ class NuScenesTrainer:
         if self.writer is not None:
             self.writer.add_scalar('val/loss_epoch', avg_loss, epoch)
         
-        # Always save a last checkpoint (full state) for resume
         self.save_checkpoint(is_best=False)
 
         if avg_loss < self.best_val_loss:
@@ -217,17 +201,14 @@ class NuScenesTrainer:
         return avg_loss
 
     def save_checkpoint(self, is_best=False):
-        # Create dir on all ranks to avoid race
         ckpt_dir = Path(f"models/checkpoints/nuscenes_expert/{self.config['run_name']}")
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save only on rank 0
         if dist.is_initialized() and dist.get_rank() != 0:
             return
 
         model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
 
-        # Always save the last full-state checkpoint to resume training
         last_payload = {
             'model_state_dict': model_to_save.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
@@ -238,9 +219,7 @@ class NuScenesTrainer:
         torch.save(last_payload, ckpt_dir / 'last_full.pth')
 
         if is_best:
-            # Best model weights only (backwards compatible with existing eval script)
             torch.save(model_to_save.state_dict(), ckpt_dir / 'best_model.pth')
-            # Also save a best full-state checkpoint for resuming from the best
             torch.save(last_payload, ckpt_dir / 'best_full.pth')
             
     def train(self):
@@ -278,7 +257,6 @@ def main():
     parser.add_argument('--local_rank', type=int, default=0, help='DDP: local GPU index')
     args = parser.parse_args()
 
-    # Initialize distributed training FIRST (before any model/optimizer construction)
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         dist.init_process_group(backend='nccl', init_method='env://')
         local_rank = int(os.environ.get('LOCAL_RANK', args.local_rank))
@@ -296,7 +274,6 @@ def main():
     train_dataset = base_train_loader.dataset
     val_dataset = base_val_loader.dataset
 
-    # Move model to device and wrap in DDP if distributed training is enabled
     if dist.is_initialized():
         local_rank = int(os.environ.get('LOCAL_RANK', 0))
         model.to(device)
@@ -310,7 +287,6 @@ def main():
     else:
         model.to(device)
 
-    # Create distributed samplers and dataloaders
     if dist.is_initialized():
         train_sampler = DistributedSampler(train_dataset, shuffle=True, drop_last=True)
         val_sampler = DistributedSampler(val_dataset, shuffle=False, drop_last=False)
@@ -338,7 +314,6 @@ def main():
         train_loader = base_train_loader
         val_loader = base_val_loader
     
-    # Optionally resume weights before constructing trainer (supports raw state_dict or full payload)
     checkpoint = None
     if args.resume_from:
         ckpt_path = Path(args.resume_from)
@@ -352,7 +327,6 @@ def main():
         model_to_load = model.module if hasattr(model, 'module') else model
         model_to_load.load_state_dict(state_dict, strict=True)
 
-    # Save config
     if not dist.is_initialized() or dist.get_rank() == 0:
         config_dir = Path(f"models/configs/nuscenes_expert")
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -364,7 +338,6 @@ def main():
         trainer.load_training_state(checkpoint)
     trainer.train()
 
-    # Clean up distributed training
     if dist.is_initialized():
         dist.destroy_process_group()
 

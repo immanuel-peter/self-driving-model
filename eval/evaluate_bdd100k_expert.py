@@ -7,7 +7,6 @@ import torch.nn as nn
 from torchvision.ops import box_convert, box_iou
 import torchvision.transforms as T
 
-# Local imports
 from models.experts import (
     BDDDetectionExpert,
     BDDDrivableExpert,
@@ -51,7 +50,6 @@ def evaluate_detection(model: nn.Module, data_loader, device: torch.device, conf
                 "labels": gt_labels[b][mask],
             })
 
-        # Forward
         outputs = model(images)
         pred_logits = outputs["class_logits"]  # [B, C, H, W]
         pred_boxes = outputs["bbox_deltas"]    # [B, 4, H, W]
@@ -62,7 +60,7 @@ def evaluate_detection(model: nn.Module, data_loader, device: torch.device, conf
         pred_logits = pred_logits.permute(0, 2, 3, 1).reshape(B, Q, C)
         pred_boxes = pred_boxes.permute(0, 2, 3, 1).reshape(B, Q, 4)
 
-        # Convert GT boxes to cxcywh for matching
+        # Convert GT boxes to cxcywh
         targets_cxcywh = []
         for t in targets:
             if t["boxes"].numel() > 0:
@@ -74,10 +72,8 @@ def evaluate_detection(model: nn.Module, data_loader, device: torch.device, conf
                 "labels": t["labels"],
             })
 
-        # Match
         indices = matcher({"pred_logits": pred_logits, "pred_boxes": pred_boxes}, targets_cxcywh)
 
-        # Compute losses (same formulation used during training)
         pred_logits_flat = pred_logits.reshape(B * Q, C)
         pred_boxes_flat = pred_boxes.reshape(B * Q, 4)
         num_classes = model.num_classes
@@ -102,8 +98,6 @@ def evaluate_detection(model: nn.Module, data_loader, device: torch.device, conf
         loss = loss_cls + config.get("bbox_loss_weight", 2.0) * loss_bbox
         total_loss += float(loss.item())
 
-        # Metrics: avg IoU on matched + recall@0.5
-        # avg IoU
         iou_scores = []
         for b, (pred_idx, tgt_idx) in enumerate(indices):
             if pred_idx.numel() > 0:
@@ -225,7 +219,6 @@ def main():
     model.to(device)
     ckpt = load_bdd_checkpoint(model, args.task, args.run_name, map_location=str(device))
 
-    # Pull training-time config if present for metric weights
     config = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
 
     if args.task == "detection":

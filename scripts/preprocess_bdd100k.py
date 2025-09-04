@@ -4,7 +4,6 @@ from tqdm import tqdm
 from pathlib import Path
 import torch
 
-# Map BDD100K detection categories to integer IDs
 CATEGORY_TO_ID = {
     "person": 0,
     "rider": 1,

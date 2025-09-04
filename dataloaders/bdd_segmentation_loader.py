@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_image, ImageReadMode
 
-# Config
 BDD100K_RAW_ROOT = 'datasets/bdd100k/raw'
 BASE_DIR = 'datasets/bdd100k/preprocessed/segmentation'
 BATCH_SIZE = 32
@@ -43,7 +42,7 @@ class BDD100KSegmentationDataset(Dataset):
         mask_path = resolve_path(sample["mask_path"])
 
         image = read_image(image_path).float() / 255.0
-        mask = read_image(mask_path, mode=ImageReadMode.GRAY).squeeze(0).long()  # shape: [H, W]
+        mask = read_image(mask_path, mode=ImageReadMode.GRAY).squeeze(0).long()  # [H, W]
 
         if self.transform:
             image = self.transform(image)
@@ -65,7 +64,6 @@ def get_bdd_segmentation_loader(split='train', batch_size=None, num_workers=None
         shuffle: whether to shuffle (default: True for train, False for val/test)
         transform: image transformations
     """
-    # Set defaults based on split
     if batch_size is None:
         batch_size = BATCH_SIZE
     if num_workers is None:
@@ -73,7 +71,6 @@ def get_bdd_segmentation_loader(split='train', batch_size=None, num_workers=None
     if shuffle is None:
         shuffle = (split == 'train')
     
-    # Build path
     split_dir = Path(BASE_DIR) / split
     if not split_dir.exists():
         raise FileNotFoundError(f"Split directory not found: {split_dir}")
@@ -86,5 +83,5 @@ def get_bdd_segmentation_loader(split='train', batch_size=None, num_workers=None
         shuffle=shuffle, 
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=(split == 'train')  # Only drop last for training
+        drop_last=(split == 'train'),
     )

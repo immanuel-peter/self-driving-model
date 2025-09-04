@@ -19,6 +19,5 @@ class BDDDrivableExpert(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         logits_lowres = self.decoder(features)  # [B, C, H/32, W/32]
-        # Always align logits to the input spatial size to match labels
         logits = F.interpolate(logits_lowres, size=x.shape[-2:], mode="bilinear", align_corners=False)
         return logits

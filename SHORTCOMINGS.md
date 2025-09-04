@@ -40,6 +40,7 @@ I collected a strong baseline with CARLA, but compute constraints forced me to l
 
 * **Test Sets:** I did not provision robust test datasets throughout development, which weakened my ability to track real progress.
 * **Model Testing:** I often ran into tensor shape mismatches and patched them quickly rather than fixing root causes.
+* **Metrics Tracking:** I treated this project more like a personal build than a formal research effort, so I didn’t consistently track training/evaluation metrics across runs. In hindsight, maintaining disciplined logs and dashboards would have made it much easier to compare approaches and debug issues.
 
 ---
 

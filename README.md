@@ -6,6 +6,17 @@
 
 This repository contains the code and experiments for building a modular, multi-task self-driving system based on a **Mixture-of-Experts (MoE)** architecture. The goal is to develop a robust model capable of navigating complex environments in the [CARLA simulator](https://carla.org/).
 
+-----
+
+## 📂 Datasets
+
+As part of this project, I created and released a collection of datasets to support research in autonomous driving.  
+
+- **[CARLA Autopilot Multimodal](https://huggingface.co/datasets/immanuelpeter/carla-autopilot-multimodal-dataset)** – 82K frames (~365 GB) with semantic segmentation, LiDAR, bounding boxes, and environment metadata for sensor fusion and RL research.  
+- **[CARLA Autopilot Images](https://huggingface.co/datasets/immanuelpeter/carla-autopilot-images)** – 68K frames (~188 GB) multi-camera dataset with synchronized ego state and controls for imitation learning and vision-to-control tasks.
+
+-----
+
 ## 🤖 Architectural Vision
 
 The core of this project is a Mixture-of-Experts model. Instead of a single, monolithic network, this architecture uses:

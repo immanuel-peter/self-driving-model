@@ -4,7 +4,6 @@ import queue
 from tqdm import tqdm
 import os
 
-# --- CONFIGURATION ---
 NUM_RUNS = 3
 RUN_DURATION = 600      # seconds per run
 IMG_WIDTH = 800
@@ -12,9 +11,7 @@ IMG_HEIGHT = 600
 NUM_NPC_VEHICLES = 50
 NUM_NPC_WALKERS = 30
 SAVE_EVERY_N = 5        # Save every N-th frame (for all cameras)
-OUTPUT_ROOT = os.path.join(
-    os.environ.get("CARLA_DATA_PATH", os.path.expanduser("~")), "automoe_training"
-)
+OUTPUT_ROOT = 'datasets/carla/raw'
 
 CAMERA_CONFIGS = [
     ("front",       carla.Transform(carla.Location(x=1.5, z=2.4))),

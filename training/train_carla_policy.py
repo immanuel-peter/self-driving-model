@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Dict
 from tqdm import tqdm
-
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -21,13 +20,9 @@ from models.policy.trajectory_head import TrajectoryPolicy
 
 
 def compute_losses(pred: Dict[str, torch.Tensor], target_wp: torch.Tensor, target_spd: torch.Tensor) -> Dict[str, torch.Tensor]:
-    # ADE over horizon
     ade = F.l1_loss(pred["waypoints"], target_wp)
-    # FDE on final step
     fde = F.l1_loss(pred["waypoints"][:, -1, :], target_wp[:, -1, :])
-    # Speed L1
     l_spd = F.l1_loss(pred["speed"], target_spd)
-    # Smoothness on waypoint deltas
     pred_deltas = pred["waypoints"][:, 1:, :] - pred["waypoints"][:, :-1, :]
     l_smooth = F.l1_loss(pred_deltas[:, 1:, :], pred_deltas[:, :-1, :])
 
@@ -80,7 +75,6 @@ def validate(model: TrajectoryPolicy, loader, device: torch.device, epoch_idx: i
         count += 1
         if rank == 0:
             it.set_postfix({"loss": f"{metrics['loss'].item():.3f}", "ade": f"{metrics['ade'].item():.3f}"})
-    # Reduce across ranks
     if dist.is_initialized():
         t = torch.tensor([total, count], dtype=torch.float32, device=device)
         dist.all_reduce(t, op=dist.ReduceOp.SUM)
@@ -111,7 +105,6 @@ def train(model: TrajectoryPolicy,
         if rank == 0:
             if val_loss < best_val:
                 best_val = val_loss
-                # Save best checkpoint (DDP-safe: unwrap if needed)
                 to_save = model.module if isinstance(model, DDP) else model
                 torch.save({
                     'epoch': epoch + 1,
@@ -123,7 +116,6 @@ def train(model: TrajectoryPolicy,
             print(f"epoch {epoch+1}/{epochs}: train {train_loss:.4f} | val {val_loss:.4f} | best {best_val:.4f}")
     if rank == 0:
         print(f"total_time_s={time.time()-start:.1f}")
-        # Save final checkpoint as well
         to_save = model.module if isinstance(model, DDP) else model
         torch.save({
             'epoch': epochs,
@@ -162,7 +154,6 @@ def main():
     world_size, local_rank = setup_ddp()
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
 
-    # Build datasets and DDP samplers
     train_ds = CarlaSequenceDataset(split="train", root_dir=args.data_root, horizon=args.horizon, include_context=(not args.no_context))
     val_ds = CarlaSequenceDataset(split="val", root_dir=args.data_root, horizon=args.horizon, include_context=(not args.no_context))
     if world_size > 1:
@@ -174,7 +165,6 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, sampler=train_sampler, shuffle=(train_sampler is None), num_workers=args.num_workers, pin_memory=True, drop_last=True, collate_fn=carla_sequence_collate, persistent_workers=True, prefetch_factor=4)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, sampler=val_sampler, shuffle=False, num_workers=args.num_workers, pin_memory=True, drop_last=False, collate_fn=carla_sequence_collate, persistent_workers=True, prefetch_factor=4)
 
-    # Infer context dim from dataset directly
     context_dim = 0
     sample0 = train_ds[0]
     if "context" in sample0:
@@ -186,7 +176,6 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     if args.epochs <= 0:
-        # Dry run: one forward pass over a small batch from train/val
         with torch.no_grad():
             sb = train_ds[0]
             images = sb["image"].unsqueeze(0).to(device)
@@ -198,7 +187,6 @@ def main():
                 print({k: tuple(v.shape) for k, v in out.items()})
         return
 
-    # Save run config (rank 0)
     if local_rank == 0:
         cfg_dir = Path("models/configs/carla_policy") / args.run_name
         cfg_dir.mkdir(parents=True, exist_ok=True)

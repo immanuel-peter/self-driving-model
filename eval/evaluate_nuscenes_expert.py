@@ -77,7 +77,6 @@ def main():
 
     device = torch.device(args.device if torch.cuda.is_available() or args.device == 'cpu' else 'cpu')
 
-    # Model and checkpoint
     model = NuScenesExpert(num_queries=args.num_queries)
     ckpt_path = Path(f'models/checkpoints/nuscenes_expert/{args.run_name}/best_model.pth')
     if not ckpt_path.exists():
@@ -86,13 +85,11 @@ def main():
     model.load_state_dict(state_dict, strict=True)
     model.to(device)
 
-    # Data
     loader = get_nuscenes_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers)
 
     metrics = evaluate(model, loader, device, config={})
     print({k: round(v, 4) for k, v in metrics.items()})
 
-    # Persist results to eval/results/*.json
     results_dir = Path("eval/results")
     results_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')

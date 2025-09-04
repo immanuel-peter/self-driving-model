@@ -4,7 +4,6 @@ import math
 import queue
 from tqdm import tqdm
 
-# --- CONFIGURATION ---
 NUM_RUNS = 3
 RUN_DURATION = 600      # seconds per run
 IMG_WIDTH = 800
@@ -12,7 +11,7 @@ IMG_HEIGHT = 600
 NUM_NPC_VEHICLES = 50
 NUM_NPC_WALKERS = 30
 SAVE_EVERY_N = 5        # Save every N-th frame (for all cameras)
-OUTPUT_ROOT = os.environ.get("CARLA_DATA_PATH", os.path.expanduser("~/self-driving-model/datasets/carla/raw"))
+OUTPUT_ROOT = 'datasets/carla/raw'
 WARMUP_TICKS = 5        # Number of ticks to warm up sensors before recording
 
 CAMERA_CONFIGS = [
@@ -22,7 +21,6 @@ CAMERA_CONFIGS = [
     ("rear",        carla.Transform(carla.Location(x=-1.5, z=2.4), carla.Rotation(yaw=180))),
 ]
 
-# --- HELPERS: camera intrinsics/projection and 2D boxes ---
 def build_camera_intrinsic(width, height, fov_deg):
     f = width / (2.0 * math.tan(math.radians(fov_deg) / 2.0))
     K = np.array([

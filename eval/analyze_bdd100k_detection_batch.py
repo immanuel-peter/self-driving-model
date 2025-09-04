@@ -29,7 +29,6 @@ def analyze_detection(model: nn.Module, data_loader, device: torch.device, confi
         gt_boxes = batch["bboxes"].to(device)    # [B, N, 4] in xyxy
         gt_labels = batch["labels"].to(device)   # [B, N]
 
-        # Build targets in cxcywh as evaluation does
         targets = []
         for b in range(images.size(0)):
             mask = gt_labels[b] != -1
@@ -51,7 +50,6 @@ def analyze_detection(model: nn.Module, data_loader, device: torch.device, confi
 
         indices = matcher({"pred_logits": pred_logits, "pred_boxes": pred_boxes}, targets)
 
-        # For each image in batch, compute IoU mean on matched and recall@0.5 across all GT
         for b in range(B):
             if num_done >= limit:
                 break
@@ -103,7 +101,6 @@ def main():
 
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
 
-    # Model + checkpoint
     model = BDDDetectionExpert()
     ckpt_path = Path(f"models/checkpoints/bdd100k_detection_expert/{args.run_name}/best.pth")
     if not ckpt_path.exists():
@@ -115,12 +112,10 @@ def main():
 
     config = checkpoint.get("config", {}) if isinstance(checkpoint, dict) else {}
 
-    # Data
     loader = get_bdd_detection_loader(args.split, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False)
 
     per_image = analyze_detection(model, loader, device, config, args.limit)
 
-    # Print compact table
     print("idx\tnGT\tnMatch\tIoU(avg)\tRecall@0.5")
     for r in per_image:
         print(f"{r['index']}\t{r['num_gt']}\t{r['num_matched']}\t{r['avg_iou_matched']:.3f}\t{r['recall_0.5']:.3f}")

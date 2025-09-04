@@ -1,25 +1,18 @@
-import os
 from pathlib import Path
 from typing import List, Dict
-
 import torch
 from torch.utils.data import Dataset, DataLoader
-
 
 DEFAULT_CARLA_PREPROCESSED_ROOT = "datasets/carla/preprocessed"
 BATCH_SIZE = 32
 NUM_WORKERS = 4
 
-
-def _list_all_pt_files(split_dir: Path) -> List[Path]:
-    # Recursively gather .pt files (under run_XXX folders)
+def _list_all_pt_files(split_dir: Path) -> List[Path]:\
     return sorted([p for p in split_dir.rglob("*.pt")])
-
 
 def detection_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     images = torch.stack([b["image"] for b in batch], dim=0)
 
-    # Determine max number of boxes in this batch
     max_boxes = 0
     for b in batch:
         max_boxes = max(max_boxes, int(b["bboxes"].shape[0]))
@@ -58,12 +51,11 @@ class CarlaDetectionDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = torch.load(self.files[idx], weights_only=False)
 
-        image: torch.Tensor = sample["image"]  # [3, 256, 256], already normalized at preprocess
+        image: torch.Tensor = sample["image"]  # [3, 256, 256]
         bboxes = sample.get("bboxes", None)
         labels = sample.get("labels", None)
 
         if bboxes is None or labels is None:
-            # Use empty tensors to keep collate simple
             bboxes = torch.zeros((0, 4), dtype=torch.float32)
             labels = torch.zeros((0,), dtype=torch.int64)
 

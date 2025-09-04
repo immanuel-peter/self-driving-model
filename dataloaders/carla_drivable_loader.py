@@ -1,15 +1,12 @@
 from pathlib import Path
 import os
 from typing import Dict, List, Optional
-
 import torch
 from torch.utils.data import Dataset, DataLoader
-
 
 DEFAULT_CARLA_PREPROCESSED_ROOT = "datasets/carla/preprocessed"
 BATCH_SIZE = 32
 NUM_WORKERS = 4
-
 
 def _parse_ids_env(env_key: str) -> Optional[List[int]]:
     val = os.environ.get(env_key)
@@ -19,7 +16,6 @@ def _parse_ids_env(env_key: str) -> Optional[List[int]]:
         return [int(x.strip()) for x in val.split(',') if x.strip()]
     except Exception:
         return None
-
 
 class CarlaDrivableDataset(Dataset):
     def __init__(self,
@@ -34,10 +30,8 @@ class CarlaDrivableDataset(Dataset):
         if not self.files:
             raise RuntimeError(f"No .pt files found under {self.root}")
 
-        # Resolve ID sets: args override env; env override defaults
         env_drv = _parse_ids_env('CARLA_DRIVABLE_IDS')
         env_alt = _parse_ids_env('CARLA_ALTERNATIVE_IDS')
-        # NOTE: Defaults are conservative; override as needed
         self.drivable_ids = drivable_ids if drivable_ids is not None else (env_drv if env_drv is not None else [7])
         self.alternative_ids = alternative_ids if alternative_ids is not None else (env_alt if env_alt is not None else [])
 

@@ -10,7 +10,6 @@ class ContextEncoder(nn.Module):
         self.context_dim = context_dim
         self.hidden_dim = hidden_dim
         
-        # Context features: speed, steering, throttle, brake, weather, time_of_day, etc.
         self.context_encoder = nn.Sequential(
             nn.Linear(context_dim, hidden_dim),
             nn.ReLU(),
@@ -81,20 +80,16 @@ class GatingNetwork(nn.Module):
         self.noise_scale = float(noise_scale)
         self.apply_topk_at_eval = bool(apply_topk_at_eval)
         
-        # Default expert output dimensions if not provided
         if expert_output_dims is None:
-            expert_output_dims = [256] * num_experts  # Default to 256 for each expert
+            expert_output_dims = [256] * num_experts
         
-        # Context encoder
         self.context_encoder = ContextEncoder(context_dim, hidden_dim)
         
-        # Expert output processors
         self.expert_processors = nn.ModuleList([
             ExpertOutputProcessor(dim, processed_dim) 
             for dim in expert_output_dims
         ])
         
-        # Gating mechanism
         self.gate_network = nn.Sequential(
             nn.Linear(hidden_dim + processed_dim * num_experts, hidden_dim),
             nn.ReLU(),
@@ -102,7 +97,6 @@ class GatingNetwork(nn.Module):
             nn.Linear(hidden_dim, num_experts),
         )
         
-        # Output projection
         self.output_projection = nn.Linear(processed_dim, processed_dim)
 
     def _sample_noise(self, shape, device):
@@ -140,23 +134,18 @@ class GatingNetwork(nn.Module):
         """
         batch_size = context.size(0)
         
-        # 1. Encode context
         context_features = self.context_encoder(context)  # [B, hidden_dim]
         
-        # 2. Process each expert output
         processed_outputs = []
         for i, (expert_output, processor) in enumerate(zip(expert_outputs, self.expert_processors)):
             processed = processor(expert_output)  # [B, processed_dim]
             processed_outputs.append(processed)
         
-        # 3. Concatenate all processed outputs
         all_processed = torch.cat(processed_outputs, dim=1)  # [B, processed_dim * num_experts]
         
-        # 4. Generate gating weights
         gate_input = torch.cat([context_features, all_processed], dim=1)  # [B, hidden_dim + processed_dim * num_experts]
         gate_logits = self.gate_network(gate_input)  # [B, num_experts]
 
-        # 5. Optional noisy Top-K routing
         apply_topk = (self.top_k > 0) and (self.training or self.apply_topk_at_eval)
         logits_for_softmax = gate_logits
         if apply_topk:
@@ -165,20 +154,17 @@ class GatingNetwork(nn.Module):
             masked_logits = self._apply_topk_mask(noisy_logits, self.top_k)
             logits_for_softmax = masked_logits
 
-        # Convert logits to weights
         if self.use_softmax:
             gate_weights = F.softmax(logits_for_softmax / self.temperature, dim=1)  # [B, num_experts]
         else:
             gate_weights = torch.sigmoid(logits_for_softmax)  # [B, num_experts]
             gate_weights = gate_weights / (gate_weights.sum(dim=1, keepdim=True) + 1e-8)
         
-        # 6. Weighted combination of expert outputs
         combined_output = torch.zeros(batch_size, self.processed_dim, device=context.device)
         for i, processed_output in enumerate(processed_outputs):
             weight = gate_weights[:, i:i+1]  # [B, 1]
             combined_output += weight * processed_output
         
-        # 7. Final projection
         final_output = self.output_projection(combined_output)
         
         return {
@@ -192,7 +178,6 @@ class GatingNetwork(nn.Module):
         """Get expert weights without processing expert outputs (for analysis)"""
         context_features = self.context_encoder(context)
         
-        # Use zeros for expert outputs to get context-only weights
         dummy_expert_outputs = [torch.zeros(context.size(0), self.processed_dim, device=context.device)] * self.num_experts
         all_processed = torch.cat(dummy_expert_outputs, dim=1)
         

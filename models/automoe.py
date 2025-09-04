@@ -26,22 +26,16 @@ class AutoMoE(nn.Module):
         self.context_config = context_config
         self.policy_config = policy_config
         
-        # Initialize experts
         self.experts = self._create_experts()
         
-        # Initialize expert extractors
         self.expert_extractors = create_expert_extractors(expert_configs)
         
-        # Initialize context extractor
         self.context_extractor = create_context_extractor(context_config)
         
-        # Initialize gating network
         self.gating_network = self._create_gating_network()
         
-        # Initialize policy head
         self.policy_head = self._create_policy_head()
         
-        # Move to device
         self.to(device)
         
     def _create_experts(self) -> nn.ModuleList:
@@ -110,7 +104,7 @@ class AutoMoE(nn.Module):
         has_simple_keys = all(k in batch for k in ('speed', 'steering', 'throttle', 'brake'))
 
         if self.context_config.get('type', 'simple') == 'simple':
-            # Simple context extractor expects [B,1] tensors (use last step if a sequence)
+            # Simple context extractor expects [B,1] tensors
             if batch['speed'].dim() == 2 and batch['speed'].size(1) > 1:
                 speed_in = batch['speed'][:, -1:].contiguous()
             else:
@@ -168,16 +162,12 @@ class AutoMoE(nn.Module):
             
             try:
                 if expert_type == 'detection':
-                    # Detection expert expects image input
                     expert_output = expert(batch['image'])
                 elif expert_type == 'segmentation':
-                    # Segmentation expert expects image input
                     expert_output = expert(batch['image'])
                 elif expert_type == 'drivable':
-                    # Drivable expert expects image input
                     expert_output = expert(batch['image'])
                 elif expert_type == 'nuscenes':
-                    # nuScenes expert expects image and lidar
                     expert_input = {
                         'image': batch['image'],
                         'lidar': batch.get('lidar', torch.zeros(batch['image'].size(0), 1000, 3, device=self.device))
@@ -190,7 +180,6 @@ class AutoMoE(nn.Module):
                 
             except Exception as e:
                 warnings.warn(f"Error running expert {i} ({expert_type}): {str(e)}")
-                # Create dummy output
                 batch_size = batch['image'].size(0)
                 dummy_output = torch.zeros(batch_size, self.expert_configs[i].get('output_dim', 256), device=self.device)
                 expert_outputs.append(dummy_output)
@@ -218,21 +207,15 @@ class AutoMoE(nn.Module):
                 - expert_outputs: List of expert outputs
                 - context_features: [B, context_dim] - encoded context
         """
-        # 1. Extract context features
         context_features = self._extract_context_features(batch)
         
-        # 2. Run all experts
         expert_outputs = self._run_experts(batch)
         
-        # 3. Extract features from expert outputs
         expert_features = self.expert_extractors.extract_features(expert_outputs)
         
-        # 4. Combine via gating network
         gating_output = self.gating_network(expert_features, context_features)
         
-        # 5. Generate policy outputs (image as primary input, gating features as context)
         policy_output = self.policy_head(batch['image'], context=gating_output['combined_output'])
-        # Keep the full speed sequence for training, and also expose last-step speed for tests
         speed_seq = policy_output.get('speed')
         speed_out = None
         if speed_seq is not None and speed_seq.dim() == 2:
@@ -265,7 +248,6 @@ class AutoMoE(nn.Module):
                     checkpoint = torch.load(checkpoint_path, map_location=self.device)
                     state_dict = checkpoint.get('model_state_dict', checkpoint)
 
-                    # Compatibility remapping for known NuScenes variants
                     is_nuscenes = isinstance(expert, NuScenesExpert)
                     if is_nuscenes:
                         remapped = {}
@@ -277,7 +259,6 @@ class AutoMoE(nn.Module):
                             else:
                                 remapped[k] = v
                         state_dict = remapped
-                        # Load non-strict to allow missing/extra keys across variants
                         expert.load_state_dict(state_dict, strict=False)
                     else:
                         expert.load_state_dict(state_dict)

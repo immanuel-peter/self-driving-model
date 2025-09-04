@@ -1,7 +1,6 @@
 import math
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -19,7 +18,8 @@ def _deg2rad(degrees: float) -> float:
 def _world_to_ego_xy(p_world_xy: torch.Tensor,
                      ego_origin_xy: torch.Tensor,
                      ego_yaw_deg: float) -> torch.Tensor:
-    """Convert a point from world XY to ego XY at time t.
+    """
+    Convert a point from world XY to ego XY at time t.
 
     Args:
         p_world_xy: tensor [2] (x, y) in world coordinates
@@ -29,7 +29,6 @@ def _world_to_ego_xy(p_world_xy: torch.Tensor,
     Returns:
         tensor [2] point in ego frame (x right, y forward)
     """
-    # Translate
     delta = p_world_xy - ego_origin_xy
     # Rotate by -yaw to align world to ego heading
     yaw = _deg2rad(ego_yaw_deg)
@@ -38,7 +37,6 @@ def _world_to_ego_xy(p_world_xy: torch.Tensor,
     rot = torch.tensor([[cos_yaw, -sin_yaw],
                         [sin_yaw,  cos_yaw]], dtype=torch.float32)
     p_ego = rot @ delta
-    # Adopt convention: x right, y forward
     return p_ego
 
 
@@ -139,7 +137,6 @@ class CarlaSequenceDataset(Dataset):
         steering_profile = torch.tensor(steerings, dtype=torch.float32)  # [H]
         brake_profile = torch.tensor(brakes, dtype=torch.float32)  # [H]
 
-        # Optional compact context vector if present in preprocessed sample
         context_tensor: Optional[torch.Tensor] = None
         if self.include_context and ("context" in current):
             ctx_parts: List[torch.Tensor] = []
@@ -210,6 +207,7 @@ def get_carla_sequence_loader(split: str = "train",
                               shuffle: Optional[bool] = None) -> DataLoader:
     if shuffle is None:
         shuffle = (split == "train")
+
     dataset = CarlaSequenceDataset(
         split=split,
         root_dir=root_dir,
@@ -218,6 +216,7 @@ def get_carla_sequence_loader(split: str = "train",
         stride=stride,
         include_context=include_context,
     )
+    
     return DataLoader(
         dataset,
         batch_size=batch_size,
