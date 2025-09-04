@@ -8,7 +8,7 @@ This repository contains the code and experiments for building a modular, multi-
 
 -----
 
-## 📂 Datasets
+## 🤗 Datasets
 
 As part of this project, I created and released a collection of datasets to support research in autonomous driving.  
 
