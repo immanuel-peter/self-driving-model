@@ -19,7 +19,7 @@ fi
 
 # Launch CARLA server
 echo "🎮 Starting CARLA server..."
-CARLA_DIR="${CARLA_DIR:-/opt/carla-simulator}"
+CARLA_DIR="${CARLA_DIR:-/path/to/carla-simulator}"
 if [ ! -d "$CARLA_DIR" ]; then
     echo "❌ CARLA directory not found: $CARLA_DIR"
     exit 1
