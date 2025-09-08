@@ -41,7 +41,7 @@ echo "Logging to: ${LOGFILE}"
 echo "=============================================================="
 echo ""
 
-export CARLA_DATA_PATH=/home/ubuntu/self-driving-model/datasets/carla/raw
+export CARLA_DATA_PATH=/path/to/datasets/carla/raw
 
 # Function to run a command only if we haven't passed the resume point
 run_if_not_passed() {

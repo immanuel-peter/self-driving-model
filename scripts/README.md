@@ -24,7 +24,7 @@ For full arguments and environment variables, open each script or run with `--he
 - **Inputs:**
   - Requires CARLA server on `localhost:2000` and Python API.
   - Args: `--runs`, `--duration`, `--vehicles`, `--walkers`, `--output`, `--save-every`, etc.
-  - Env: `CARLA_DATA_PATH` (default `~/automoe_training`).
+  - Env: `CARLA_DATA_PATH` (default `/path/to/automoe_training`).
 - **Outputs:**
   - `run_*/images/<front|front_left|front_right|rear>/*.png`, `vehicle_log.json`, `collisions.json`, `config.json`.
 - **Notes:** Multi-cam RGB only; suitable for quick baseline data.
@@ -40,7 +40,7 @@ For full arguments and environment variables, open each script or run with `--he
 - **Inputs:**
   - Requires CARLA server on `localhost:2000` and Python API.
   - Args: `--runs`/`--single-run`, `--continue-from`, `--duration`, `--vehicles`, `--walkers`, `--save-every`, `--output`.
-  - Env: `CARLA_DATA_PATH` (default `~/self-driving-model/datasets/carla/raw`).
+  - Env: `CARLA_DATA_PATH` (default `/path/to/datasets/carla/raw`).
 - **Outputs:**
   - `images/<cam>/*.png`, `segmentation/front/*.png` (+ colorized `segmentation_vis/front/*.png`), `lidar/*.npy` (Nx4), `annots/front/*.json` (2D boxes), `vehicle_log.json`, `collisions.json`, `config.json`.
 - **Notes:** Synchronous mode with warm-up; front camera FOV=90; saves intrinsics-consistent artifacts.

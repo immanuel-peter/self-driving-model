@@ -4,7 +4,7 @@
 
 set -eou pipefail
 
-cd /home/ubuntu/self-driving-model
+cd /path/to/self-driving-model
 source .venv/bin/activate
 
 # System/runtime tuning (adjust as needed)

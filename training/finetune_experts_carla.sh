@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Tunables / defaults
 NUM_GPUS=${NUM_GPUS:-4}
-DATA_ROOT=${DATA_ROOT:-/ephemeral/datasets/carla/preprocessed}
+DATA_ROOT=${DATA_ROOT:-/path/to/datasets/carla/preprocessed}
 DET_RUN=${DET_RUN:-carla_det_ft_ddp}
 DRV_RUN=${DRV_RUN:-carla_drv_ft_ddp}
 SEG_RUN=${SEG_RUN:-carla_seg_ft_ddp}

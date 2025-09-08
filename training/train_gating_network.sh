@@ -19,7 +19,7 @@ trap 'echo ""; echo "===========================================================
 
 # Configuration
 CONFIG_FILE="models/configs/gating_network/automoe_gating_v2/config.json"
-DATA_ROOT="/ephemeral/datasets/carla/preprocessed"
+DATA_ROOT="/path/to/datasets/carla/preprocessed"
 CHECKPOINT_DIR="models/checkpoints/gating_network/automoe_gating_v2"
 RUN_NAME="automoe_gating_v2"
 
